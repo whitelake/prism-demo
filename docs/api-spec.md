@@ -57,6 +57,7 @@
 | 401 | 未登录 / token 无效 / JWT 过期 |
 | 403 | 越权（面试官访问非自己创建的测评） |
 | 404 | 资源不存在 |
+| 410 | 资源已废弃（测评被标记放弃） |
 | 409 | 状态冲突（如重复提交判断B、上一轮未完成） |
 | 422 | 业务规则不满足（如面试记录为空却提交判断） |
 | 500 | 服务端错误 |
@@ -105,6 +106,9 @@ type Track = '个人深度轨道' | '团队负责人轨道' | '无法判断';
 /** 维度代号 */
 type DimensionCode = 'D1' | 'D2' | 'D3' | 'D4' | 'D5' | 'D6';
 
+/** 安全红线代号（PRD 4.6） */
+type RedLineCode = 'RL1' | 'RL2' | 'RL3' | 'RL4';
+
 /** 证据来源 */
 type EvidenceSource =
   | 'questionnaire' | 'examiner_dialogue' | 'tool_task' | 'interview_transcript';
@@ -136,6 +140,11 @@ interface SystemCard {
     content: string;             // 纯文本材料全文
   };
 }
+// variant 用途：
+//   mode_switch  - 考官→工具模式切换提示
+//   task_brief   - 工具任务说明（含 T2 核查材料 attachment）
+//   task_done    - 任务完成提示
+//   notice       - 系统/异常提示（如 LLM 重试后的恢复说明、网络中断提示）
 ```
 
 **设计说明**：模式切换提示、任务说明卡片都作为 `system_card` 混在消息流中返回，前端无需感知业务逻辑。这样阶段推进、模式切换的时机完全由后端控制（对应架构文档"流程由后端控制"原则）。
@@ -153,6 +162,14 @@ interface TimerInfo {
 ```
 
 **空闲判定**：前端基于 `lastActivityTs` 自行计时，达到阈值后调用跳过接口。**服务端会二次校验**实际间隔，防止前端误触。
+
+**`lastActivityTs` 更新时机**（后端在以下事件成功后写入）：
+- `POST /message` 成功（考官模式候选人提交）
+- `POST /message/stream` 的 `accepted` 事件发出（工具模式候选人提交）
+- `POST /task/complete` 成功
+- `POST /skip` 成功
+- `GET /state` **不更新**（仅读取，不重置计时）
+- 候选人页面刷新不重置——刷新前后的 `lastActivityTs` 应一致
 
 ---
 
@@ -250,14 +267,13 @@ GET /api/v1/c/{token}/questionnaire
     {
       "code": "Q2",
       "type": "multiple",
-      "title": "你主要用AI做哪些事？（可多选）",
+      "title": "你目前自己付费订阅的AI工具有哪些？（多选）",
       "options": [
-        { "value": "写文案", "label": "写文案/邮件/文档" },
-        { "value": "查资料", "label": "查资料/找信息" },
-        { "value": "数据处理", "label": "数据整理与分析" },
-        { "value": "翻译", "label": "翻译" },
-        { "value": "编程", "label": "写代码/脚本" },
-        { "value": "其他", "label": "其他" }
+        { "value": "ChatGPT Plus", "label": "ChatGPT Plus" },
+        { "value": "Claude Pro", "label": "Claude Pro" },
+        { "value": "Gemini Advanced", "label": "Gemini Advanced" },
+        { "value": "其他付费工具", "label": "有但不在列表（填写）" },
+        { "value": "无", "label": "没有付费订阅" }
       ],
       "required": true,
       "minSelect": 1
@@ -266,7 +282,7 @@ GET /api/v1/c/{token}/questionnaire
 }
 ```
 
-**设计说明**：题目定义**从后端配置文件读取**（`config/questionnaire.yaml`），产品可自行修改题目与选项而无需改前端代码。前端按 `type` 渲染单选/多选。
+**设计说明**：题目定义**从后端配置文件读取**（`config/questionnaire.yaml`），产品可自行修改题目与选项而无需改前端代码。前端按 `type` 渲染单选/多选。题目意图与用途以 PRD 4.1 为准，本示例仅作格式演示。
 
 ---
 
@@ -282,7 +298,7 @@ POST /api/v1/c/{token}/questionnaire
 {
   "answers": {
     "Q1": "每天多次",
-    "Q2": ["写文案", "数据处理"],
+    "Q2": ["ChatGPT Plus", "Claude Pro"],
     "Q3": "给过同事用",
     "Q4": "偶尔",
     "Q5": "本周"
@@ -405,8 +421,8 @@ POST /api/v1/c/{token}/message
       "type": "system_card",
       "card": {
         "variant": "mode_switch",
-        "title": "接下来进入实操环节",
-        "body": "下面的AI是一个**普通的AI助手**，它不了解本次测评的任何信息。\n请像平时使用AI一样，自己组织你的需求。"
+        "title": "进入实操环节",
+        "body": "接下来的环节中，这个对话框是一个普通的AI助手，它不会再向你提问，也不会评价你的操作。\n请像平时工作中使用AI一样使用它，完成下面的任务。"
       },
       "ts": "..."
     },
@@ -423,13 +439,15 @@ POST /api/v1/c/{token}/message
   ],
   "timer": {
     "examinerTotalRemainingSec": null,
-    "taskRemainingSec": 600,
+    "taskRemainingSec": 720,
     "...": "..."
   }
 }
 ```
 
 **⚠ 关键约束**：`card.body` 中的任务描述**由前端渲染展示，绝不进入工具模式的模型上下文**（架构文档 4.1 约束2）。前端只需展示，不要把它拼进后续的请求。
+
+**evidence 字段说明**：`location`（如 `"S1.1 turn 2"`）是 PRD 5.3 之外的扩展字段，用于人工复核时快速定位原话出处。PRD 5.3 原始 schema 仅含 `{source, quote, note}`，本字段为可观测性扩展，已反馈至 PRD 待正式纳入。
 
 **响应 409 TURN_IN_PROGRESS**：上一轮模型调用未完成。前端应禁用输入框直到收到响应，此错误为兜底。
 
@@ -480,6 +498,8 @@ data: {"aiMessageId":32,"turnIndex":1,"taskRemainingSec":540,"finishReason":"sto
 
 `finishReason` 取值：`stop`（正常结束）| `length`（达到长度上限）。
 
+**任务时长归零的处理**：`done` 事件**不携带阶段推进信号**。任务倒计时（`taskRemainingSec`）归零时，前端需在收到 `done` 后调用 3.8 `/skip`（`reason: task_timeout`）触发推进；后端二次校验时长后返回 3.5/3.7 的推进响应结构。
+
 ### 前端实现要点
 
 | # | 要点 |
@@ -489,6 +509,13 @@ data: {"aiMessageId":32,"turnIndex":1,"taskRemainingSec":540,"finishReason":"sto
 | 3 | 流式过程中禁用输入框；收到 `done` 或 `error` 后恢复 |
 | 4 | 连接中断（无 `done` 也无 `error`）：显示"连接中断，请重试"，重试时重新发送原内容。后端已落库的孤立记录由评估时忽略 |
 | 5 | **不做打字机动效延迟**，收到即渲染，保证候选人体感真实 |
+
+**并发保护**：流式输出期间再次调用 `/message/stream` 返回 `409 TURN_IN_PROGRESS`（同 3.5）。前端在 `done`/`error` 事件前应禁用发送按钮。
+
+**重试幂等性**：
+- 已收到 `accepted` 事件后中断 → 重试时必须携带原 `candidateMessageId`（在 `accepted` 事件 data 中获取），后端按此 ID 幂等去重：若该 ID 已存在完整 AI 回复，直接重放 `done` 事件；若仅 candidate 落库、AI 回复未完成，继续从断点流式输出
+- 未收到 `accepted` 事件就中断（如网络握手失败）→ 重试不带 ID，作为新提交处理，原孤立 candidate 记录由评估阶段按 `turn_index` 去重忽略
+- 前端实现：在 `accepted` 事件回调里持久化 `candidateMessageId` 到 localStorage，重试前读取
 
 ---
 
@@ -529,7 +556,7 @@ POST /api/v1/c/{token}/task/complete
       }
     }
   ],
-  "timer": { "taskRemainingSec": 600, "...": "..." }
+  "timer": { "taskRemainingSec": 480, "...": "..." }
 }
 ```
 
@@ -668,8 +695,11 @@ GET /api/v1/assessments?status={status}&keyword={kw}&page=1&pageSize=20
       "position": "运营专员",
       "status": "completed",
       "statusLabel": "已完成",
-      "levelDisplay": "L2",
+      "levelADisplay": "L2",
+      "levelBDisplay": null,
+      "levelCDisplay": null,
       "trackDisplay": "个人深度轨道",
+      "consistencySummary": null,
       "needsHumanReview": false,
       "createdAt": "2025-03-14T09:50:00.000+08:00",
       "submittedAt": "2025-03-14T10:28:30.000+08:00"
@@ -680,9 +710,27 @@ GET /api/v1/assessments?status={status}&keyword={kw}&page=1&pageSize=20
       "position": "市场经理",
       "status": "pending_interview",
       "statusLabel": "待现场验证",
-      "levelDisplay": "待验证",
+      "levelADisplay": "待验证",
+      "levelBDisplay": "未提交",
+      "levelCDisplay": null,
       "trackDisplay": "待验证",
+      "consistencySummary": null,
       "needsHumanReview": true,
+      "createdAt": "...",
+      "submittedAt": "..."
+    },
+    {
+      "id": "i9j0k1l2-...",
+      "candidateName": "王磊",
+      "position": "运营",
+      "status": "completed",
+      "statusLabel": "已完成",
+      "levelADisplay": "L3",
+      "levelBDisplay": "L3",
+      "levelCDisplay": "L3",
+      "trackDisplay": "个人深度轨道",
+      "consistencySummary": "一致",
+      "needsHumanReview": false,
       "createdAt": "...",
       "submittedAt": "..."
     }
@@ -690,14 +738,27 @@ GET /api/v1/assessments?status={status}&keyword={kw}&page=1&pageSize=20
 }
 ```
 
+### 字段说明（PRD 6.6 列表四列对应）
+
+| 字段 | PRD 列名 | 取值规则 |
+|------|---------|---------|
+| `levelADisplay` | 大模型初判 | A 的等级字符串（如 "L2"）。`status ∈ {pending_interview, final_evaluating, eval_failed}` 时为 `"待验证"`；A 未产出（status=evaluating）时为 `null` |
+| `levelBDisplay` | 面试官判断 | B 的等级字符串。未提交 B 时为 `"未提交"`；未触发面试官环节的测评为 `null` |
+| `levelCDisplay` | 大模型终判 | C 的等级字符串。未经过面试官环节或 C 未产出时为 `null`；`eval_failed` 时为 `"待验证"` |
+| `trackDisplay` | （辅助）轨道 | A 或 C 的轨道；锁定态为 `"待验证"`；未产出为 `null` |
+| `consistencySummary` | 一致性 | 三方齐备时返回 `"一致" \| "差1级" \| "差2级+"`，否则 `null` |
+
 ### ⚠ 锁定规则（架构文档 4.2 约束2）
 
 当 `status ∈ {pending_interview, final_evaluating}` 时：
 
 | 字段 | 值 |
 |------|----|
-| `levelDisplay` | 固定字符串 `"待验证"` |
+| `levelADisplay` | 固定字符串 `"待验证"` |
+| `levelBDisplay` | 已提交则真实等级，未提交则 `"未提交"`（B 不受 A 锁定影响，B 本身不泄露 A） |
+| `levelCDisplay` | `null`（C 未产出） |
 | `trackDisplay` | 固定字符串 `"待验证"` |
+| `consistencySummary` | `null`（三方未齐备） |
 
 **响应中不存在 `level` / `confidence` 等原始字段**——不是置空，是**不返回该键**。列表接口不返回任何数值型等级信息。
 
@@ -714,14 +775,13 @@ POST /api/v1/assessments
 **请求**
 
 ```json
-{ "candidateName": "陈曦", "position": "运营专员", "isTest": false }
+{ "candidateName": "陈曦", "position": "运营专员" }
 ```
 
 | 字段 | 必填 | 说明 |
 |------|------|------|
 | `candidateName` | 是 | 1–20 字符 |
-| `position` | 否 | 0–100 字符 |
-| `isTest` | 否 | 标记为内部测试数据，默认 false。用于 PoC 阶段区分测试与真实样本 |
+| `position` | 否 | 0–100 字符。PoC 阶段约定填 `"TEST"` 标记内部测试数据（与 architecture 9.1 一致） |
 
 **响应 201**
 
@@ -761,6 +821,24 @@ GET /api/v1/assessments/{id}/report
 
 响应根据状态分为**两种形态**，前端按 `locked` 字段分支渲染。
 
+### 字段命名约定
+
+- 模型输出 JSON 使用 **snake_case**（PRD 5.3 schema 定义），如 `claim_reality_gap`、`anomaly_signals`、`red_lines`、`key_uncertainties`、`recommend_human_review`、`human_review_reason`
+- 后端 `llm.client.ts` 解析模型响应时统一转为 **camelCase** 后再由 API 暴露（如 `claimRealityGap`、`anomalySignals`、`redLines`）
+- 前端类型由 `openapi-typescript` 从 `/api/v1/docs-json` 生成，全部使用 camelCase
+- 翻译层位置：架构文档 4.4 `parseJsonResponse` 之后，存入 `evaluation.result_json` 之前
+
+### 扩展字段声明
+
+下列字段是 api-spec 在 PRD 5.3 schema 之外的扩展，用于人工复核，已提交产品团队确认是否纳入 PRD 正式 schema（见第10章 #7）：
+
+| 字段 | 位置 | 用途 |
+|------|------|------|
+| `dimensions[].reasoning` | evaluationA/C | 维度等级的判断理由，便于人工复核理解 |
+| `anomalySignals[].evidence` | evaluationA/C | 异常信号的具体证据引用 |
+| `evidence[].location` | dimensions[].evidence | 原话出处定位（如 `"S1.1 turn 2"`） |
+| `evaluationA.type` / `createdAt` | evaluationA 顶层 | 元信息（A/C 区分与产出时间） |
+
 ### 形态一：锁定态（`pending_interview` / `final_evaluating`）
 
 ```json
@@ -782,8 +860,7 @@ GET /api/v1/assessments/{id}/report
         "index": 1,
         "quote": "做了一套东西把三个人的表格格式统一",
         "ask": "请让他具体描述这套东西的形态——是文档规范、表格模板、固定的提示词，还是别的形式？",
-        "verify": "改造成果的具体形态",
-        "follow_up": ["如果是模板，请了解包含哪些字段", "请了解这套东西目前是否还在使用"]
+        "verify": "改造成果的具体形态"
       }
     ],
     "note": ""
@@ -791,7 +868,7 @@ GET /api/v1/assessments/{id}/report
   "rawLog": {
     "questionnaire": {
       "Q1": { "title": "你使用AI工具的频率大概是？", "answer": "每天多次" },
-      "Q2": { "title": "你主要用AI做哪些事？", "answer": ["写文案", "数据处理"] }
+      "Q2": { "title": "你目前自己付费订阅的AI工具有哪些？", "answer": ["ChatGPT Plus", "Claude Pro"] }
     },
     "examinerDialogue": [
       {
@@ -944,6 +1021,8 @@ GET /api/v1/assessments/{id}/report
 }
 ```
 
+`failureInfo.stage` 枚举：`evaluation_a | evaluation_c | outline`，与 4.10 `scope` 取值对齐。`outline` 失败时 `outline: null` 但 `evaluationA` 仍可正常展示，状态不一定为 `eval_failed`。
+
 前端展示"评估失败"提示 + "重新评估"按钮 + 原始日志（日志始终可看）。
 
 ### ★ 一致性对比说明
@@ -963,7 +1042,7 @@ PUT /api/v1/assessments/{id}/transcript
 **请求**
 
 ```json
-{ "transcript": "面试官：你说做了一套东西...\n候选人：对，是一个Excel模板..." }
+{ "transcriptDraft": "面试官：你说做了一套东西...\n候选人：对，是一个Excel模板..." }
 ```
 
 **响应 200**
@@ -974,6 +1053,7 @@ PUT /api/v1/assessments/{id}/transcript
 
 **说明**：
 - 可重复调用。前端建议**每 30 秒自动保存一次** + 失焦时保存，防止面试官辛苦录入的内容丢失
+- 写入 `interviewer_judgment.transcript_draft` 列（草稿），不污染 `transcript` 列（提交B时转正）
 - 无字数下限校验（草稿阶段）
 - 上限 100000 字符，超出返回 `400 TRANSCRIPT_TOO_LONG`
 - 提交判断B后此接口返回 `409 JUDGMENT_SUBMITTED`（记录已锁定）
@@ -1001,8 +1081,9 @@ POST /api/v1/assessments/{id}/judgment
 |------|------|------|
 | `level` | 是 | 枚举 `L0`–`L4`。**不接受 `_pending` 后缀** |
 | `track` | 是 | 枚举三值 |
-| `reason` | 是 | 10–2000 字符 |
-| `transcript` | 是 | **≥ 100 字符**，防止空提交 |
+| `reason` | 是 | 30–2000 字符 |
+| `transcript` | 是 | 1–100000 字符。**`< 200` 字符不阻断提交**，详见下方说明 |
+| `confirm` | 否 | 布尔。当 `transcript` 不足 200 字符时，需传 `true` 才真正落库 |
 
 **响应 200**
 
@@ -1014,9 +1095,22 @@ POST /api/v1/assessments/{id}/judgment
 }
 ```
 
-**响应 409 JUDGMENT_ALREADY_SUBMITTED**：已提交，不可修改。
+**响应 200（短记录确认态，未真正落库）**
 
-**响应 422 TRANSCRIPT_TOO_SHORT**：面试记录不足 100 字符。`message`："请先录入面试过程的文字记录（至少100字）"。
+```json
+{
+  "warn": "transcript_short",
+  "charCount": 168,
+  "message": "面试记录较短（168字），可能影响终判质量。是否确认提交？",
+  "needConfirm": true
+}
+```
+
+前端收到 `needConfirm: true` 后弹窗二次确认；用户确认后携带 `confirm: true` 重新提交，后端才落库并触发终判。**不返回 4xx**——PRD 5.6 明确"少于200字时弹窗确认，不阻断"。
+
+**防重放**：`confirm: true` 路径**不发放一次性 token**。后端在首次成功落库后状态即变 `final_evaluating`，重复带 `confirm: true` 调用会被 `409 JUDGMENT_ALREADY_SUBMITTED` 兜底。前端收到 `200 + status: final_evaluating` 后应立即跳转至轮询页，避免重复提交。
+
+**响应 409 JUDGMENT_ALREADY_SUBMITTED**：已提交，不可修改。
 
 ### ⚠ 该接口的三重语义
 
@@ -1111,6 +1205,10 @@ GET /api/v1/assessments/{id}/export
 
 **说明**：这是**唯一会返回 `signals` 字段的接口**，仅供 PoC 分析使用，不用于前端渲染。
 
+**与 CLI 批量导出的分工**（architecture 5.3）：
+- HTTP 接口（本接口）：单份导出，用于面试官/产品临时取数
+- CLI 脚本 `npm run export`：PoC 结束时全量批量导出，输出 JSON 文件
+
 ---
 
 # 第5章 管理接口
@@ -1135,7 +1233,10 @@ X-Admin-Key: {key}
     "prompts/outline.md",
     "stages.yaml",
     "tasks.yaml",
-    "questionnaire.yaml"
+    "questionnaire.yaml",
+    "levels.yaml",
+    "outline_blacklist.yaml",
+    "cards.yaml"
   ],
   "warnings": [],
   "reloadedAt": "2025-03-14T16:00:00.000+08:00"
@@ -1183,10 +1284,10 @@ X-Admin-Key: {key}
 | `CANNOT_REGENERATE` | 409 | 测评已开始，无法重新生成链接 |
 | `REPORT_LOCKED` | 403 | 需先提交现场判断（**兜底，正常流程不应出现**） |
 | `JUDGMENT_ALREADY_SUBMITTED` | 409 | 判断已提交，不可修改 |
-| `TRANSCRIPT_TOO_SHORT` | 422 | 请先录入面试记录（至少100字） |
 | `TRANSCRIPT_TOO_LONG` | 400 | 面试记录超出长度限制 |
 | `CANNOT_REEVALUATE` | 409 | 当前状态不支持重新评估 |
 | `EVALUATION_NOT_READY` | 409 | 评估尚未完成 |
+| `ADMIN_KEY_INVALID` | 401 | 管理密钥无效或缺失 |
 
 ---
 
@@ -1259,7 +1360,8 @@ X-Admin-Key: {key}
 | D1 | 面试官A访问面试官B创建的测评 | 403 `FORBIDDEN` |
 | D2 | 重复提交判断B | 409 `JUDGMENT_ALREADY_SUBMITTED` |
 | D3 | 提交B后调 `PUT /transcript` | 409 `JUDGMENT_SUBMITTED` |
-| D4 | `transcript` 传 50 字符提交判断 | 422 `TRANSCRIPT_TOO_SHORT` |
+| D4 | `transcript` 传 50 字符（不带 `confirm`）提交判断 | 200 `warn: transcript_short`、`needConfirm: true`，**不落库** |
+| D4b | `transcript` 传 50 字符 + `confirm: true` 提交判断 | 200 正常落库，状态推进至 `final_evaluating` |
 | D5 | 已开始的测评调重新生成链接 | 409 `CANNOT_REGENERATE` |
 | D6 | 未达 600 秒调 `/skip` | 422 `SKIP_NOT_ALLOWED` |
 | D7 | 同一 token 并发发两条 message | 第二条返回 409 `TURN_IN_PROGRESS` |
@@ -1295,10 +1397,12 @@ SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, config));
 | # | 事项 | 需确认方 |
 |---|------|---------|
 | 1 | 候选人链接路径用 `/a/{token}` 还是 `/assessment/{token}` | 产品（影响链接观感） |
-| 2 | 面试记录最短字数 100 是否合适 | 产品 |
+| 2 | 面试记录 200 字符弹窗确认阈值是否合适 | 产品 |
 | 3 | 实操任务是否强制至少交互 1 轮才能点"完成" | 产品 |
 | 4 | 候选人端是否需要"退出/暂停"按钮 | 产品 |
 | 5 | 面试官账号如何初始化（脚本预置 or 简易管理页） | 技术 + 产品 |
 | 6 | JWT 有效期 12 小时是否合适 | 技术 |
+| 7 | `evidence.location` / `dimensions[].reasoning` / `anomalySignals[].evidence` 扩展字段是否纳入 PRD 5.3 正式 schema | 产品 + 技术 |
+| 8 | `cards.yaml` 中 mode_switch/task_done/notice 文案是否完全沿用 PRD 2.2/4.3 的固定文案 | 产品 |
 
 ---

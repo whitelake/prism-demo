@@ -439,6 +439,8 @@
 
 **不触发**：L2及以下 且 置信度 ≥ 0.6 且 无落差/红线标记 → 状态直接置为"已完成"。
 
+**触发判定函数**：上述 5 条件由后端 `shouldTriggerInterview` 函数实现（详见 architecture 4.3），评估A产出后立即调用；模型返回的 `recommend_human_review` 仅作辅助提示，不参与触发决策。
+
 ## 4.6 安全红线
 
 红线**不参与等级判定**，独立标记并强制转人工。
@@ -456,9 +458,11 @@
 |------|------|
 | 候选人中途关闭页面 | 视为放弃，状态置为"已放弃"。面试官可点击"重新生成链接"让候选人重做（从头开始，不续答） |
 | 候选人长时间无响应 | 单轮无输入超过5分钟，前端提示；超过10分钟，该阶段自动结束进入下一阶段 |
-| 大模型接口失败 | 前端重试3次；连续失败展示"系统繁忙，请稍后重试"，保留已有日志，候选人可刷新继续当前阶段 |
-| 评估接口失败 | 后台记录失败，面试官侧状态显示"评估失败"，提供"重新评估"按钮 |
-| 面试官粘贴的记录过短 | 少于200字时提示确认，但不阻断 |
+| 大模型接口失败（对话/工具模式） | 前端重试3次；连续失败展示"系统繁忙，请稍后重试"，保留已有日志，候选人可刷新继续当前阶段 |
+| 评估A失败 | 后台记录失败，状态置为"评估失败"，提供"重新评估"按钮。面试官可调 `scope=all` 或 `scope=evaluation` 重试 |
+| 终判C失败 | 状态从"终判中"回退至"评估失败"，A仍锁定不展示（B已锁定不可改）。面试官可调 `scope=evaluation` 重试终判，不重跑题纲 |
+| 题纲生成失败（黑名单3次重试均命中） | 题纲置 null，降级为"仅展示原始日志"，不阻断评估A；面试官侧报告页提示"题纲生成失败" |
+| 面试官粘贴的记录过短 | 少于200字时弹窗确认"记录较短，是否确认提交"，但不阻断提交 |
 
 ## 4.8 状态机
 
@@ -603,6 +607,22 @@ AI使用行为信息。
 
 ## 5.3 评估 Prompt 设计
 
+### 字段命名约定
+
+- 模型输出 JSON 使用 **snake_case**（本节 schema 定义），如 `claim_reality_gap`、`anomaly_signals`、`red_lines`、`key_uncertainties`、`recommend_human_review`、`human_review_reason`
+- 后端 `llm.client.ts` 解析时统一转为 **camelCase** 后由 API 暴露（详见 api-spec 4.6 与 architecture 4.4）
+- 前端类型由 OpenAPI 生成，全部使用 camelCase
+
+### 扩展字段（已纳入正式 schema）
+
+下列字段是后端在原始 schema 之上为支持人工复核而扩展的，与开发对齐后纳入本节：
+
+| 字段 | 位置 | 用途 |
+|------|------|------|
+| `reasoning` | dimensions[] | 维度等级的判断理由 |
+| `evidence` | anomaly_signals[] | 异常信号的具体证据引用 |
+| `location` | dimensions[].evidence[] | 原话出处定位（如 "S1.1 turn 2"） |
+
 ### 输入：结构化日志
 
 ```json
@@ -682,8 +702,9 @@ D6 影响力与组织推动
       "code": "D4",
       "name": "核验意识与批判性",
       "level": "L2",
+      "reasoning": "能主动发现数字异常并追溯到原始报告，但仅在被问到才提及，未形成机制",
       "evidence": [
-        { "source": "examiner_dialogue", "quote": "它给我一个行业渗透率的数字，我觉得偏高，去查了原始报告", "note": "具体案例，有触发点和处理动作" }
+        { "source": "examiner_dialogue", "location": "S1.2 turn 3", "quote": "它给我一个行业渗透率的数字，我觉得偏高，去查了原始报告", "note": "具体案例，有触发点和处理动作" }
       ],
       "confidence": 0.85,
       "insufficient_evidence": false
@@ -695,7 +716,7 @@ D6 影响力与组织推动
     "interpretation": "倾向夸大 / 缺乏自我认知 / 紧张导致表现失真 / 无"
   },
   "anomaly_signals": [
-    { "type": "响应时间异常", "description": "T1首轮提示词380字，响应间隔仅18秒" }
+    { "type": "响应时间异常", "evidence": "T1 turn 1，提示词380字，response_interval_sec=18", "description": "输入速度与内容长度不匹配" }
   ],
   "red_lines": [
     { "code": "RL2", "quote": "...", "description": "..." }
@@ -708,7 +729,9 @@ D6 影响力与组织推动
     "key_uncertainties": [
       "流程改造的具体形态仅有自述，未见细节",
       "他人采纳的性质（主动/被动）不明"
-    ]
+    ],
+    "recommend_human_review": true,
+    "human_review_reason": "L3_pending 需现场验证"
   }
 }
 ```
@@ -732,7 +755,7 @@ D6 影响力与组织推动
 | content | 全文 |
 | ts | 时间戳（毫秒） |
 | response_interval_sec | 候选人从看到问题到提交回答的间隔（仅candidate） |
-| signals | 该轮大模型输出的signals（仅ai） |
+| signals | 该轮大模型输出的signals（仅ai）。**仅落库，不进入任何前端接口**（PoC 约束3）；唯一例外是 `GET /api/v1/assessments/:id/export` 单份导出接口（详见 api-spec 4.12） |
 
 ### 工具模式
 
@@ -909,11 +932,13 @@ D6 影响力与组织推动
 | 候选人姓名 | — |
 | 岗位 | 纯文本记录 |
 | 状态 | 未开始/进行中/评估中/已完成/待现场验证/终判中/已放弃/评估失败 |
-| 大模型初判 | **状态为"待现场验证"或"终判中"时，显示"待验证"，隐藏真实等级** |
-| 面试官判断 | 未提交时显示"未提交" |
-| 大模型终判 | 仅"已完成"且经过面试官环节时展示 |
-| 一致性 | 三方齐备时展示"一致 / 差1级 / 差2级+" |
+| 大模型初判 | 对应 `levelADisplay` 字段。状态为"待现场验证"或"终判中"时显示"待验证"，隐藏真实等级；评估中为空；评估失败为"待验证" |
+| 面试官判断 | 对应 `levelBDisplay` 字段。未提交时显示"未提交"；未触发面试官环节的测评为空 |
+| 大模型终判 | 对应 `levelCDisplay` 字段。仅"已完成"且经过面试官环节时展示真实等级；其余为空 |
+| 一致性 | 对应 `consistencySummary` 字段。三方齐备时展示"一致 / 差1级 / 差2级+"，否则为空 |
 | 操作 | 复制链接 / 查看 / 重新生成链接 / 重新评估 |
+
+**接口字段对应**：列表接口（api-spec 4.3）返回 `levelADisplay` / `levelBDisplay` / `levelCDisplay` / `consistencySummary` 四个独立字段，前端按 PRD 列定义渲染。锁定规则在 api-spec 4.3 中明确。
 
 **新建测评弹窗**：候选人姓名（必填）、岗位（选填）→ 生成链接。
 
@@ -940,7 +965,7 @@ D6 影响力与组织推动
 | 追问题纲区 | 3–5条，每条含：候选人原话引用、建议追问、想验证什么 |
 | 原始日志区 | 完整对话与实操记录（可读） |
 | 面试记录录入区 | 多行文本框 + 录入规范提示 + "保存草稿" |
-| 独立判断表单 | 等级单选、轨道单选、理由文本框（必填，≥30字）、提交按钮 |
+| 独立判断表单 | 等级单选（L0–L4，不接受_pending）、轨道单选、理由文本框（必填，30–2000字）、面试记录文本框（必填，1字以上；<200字弹窗确认不阻断）、提交按钮 |
 
 **必须隐藏**：大模型初判等级、置信度、维度评估、判断理由、落差标记、红线标记。
 
@@ -1080,19 +1105,21 @@ D6 影响力与组织推动
 | `dialogue_log` | assessment_id, mode(examiner/tool), stage_or_task, turn, role, content, ts, response_interval_sec, signals |
 | `llm_call_log` | assessment_id, purpose(examiner/tool/eval/outline), request_prompt, response_raw, tokens, latency, ts |
 | `evaluation` | assessment_id, type(A/C), result_json, level, track, confidence, created_at |
-| `interviewer_judgment` | assessment_id, level, track, reason, transcript, submitted_at |
-| `consistency` | assessment_id, a_eq_b, b_eq_c, a_eq_c, max_level_gap |
+| `interviewer_judgment` | assessment_id, level, track, reason, transcript（提交B时转正锁定）, transcript_draft（草稿）, submitted_at |
+| `consistency` | assessment_id, level_a, level_b, level_c, a_eq_b, b_eq_c, a_eq_c, max_level_gap（L3_pending=L3，gap 按数值计算）, computed_at |
 
 ## 附录B 需要产品团队在开发启动前交付的配置内容
 
 | # | 内容 | 交付形式 |
 |---|------|---------|
-| 1 | 5道选择题最终文案与选项 | 配置文件 |
-| 2 | 3个阶段目标的最终表述 | 配置文件 |
-| 3 | T1、T2任务描述最终文案（T2需含200字核查材料） | 配置文件 |
-| 4 | 考官模式、工具模式、评估、题纲生成 4份Prompt初版 | 配置文件 |
-| 5 | 等级定义与必要证据表（4.4节） | 注入评估Prompt |
-| 6 | 测试对象名单与面试官预期等级表 | 系统外表格 |
+| 1 | 5道选择题最终文案与选项 | `config/questionnaire.yaml` |
+| 2 | 3个阶段目标、轮次上限、绝对上限的最终表述 | `config/stages.yaml` |
+| 3 | T1、T2任务描述最终文案（T2需含200字核查材料） | `config/tasks.yaml` |
+| 4 | 考官模式、工具模式、评估、题纲生成 4份Prompt初版 | `config/prompts/*.md` |
+| 5 | 等级定义与必要证据表（4.4节） | `config/levels.yaml`（注入评估Prompt） |
+| 6 | 题纲黑名单正则（4.4节） | `config/outline_blacklist.yaml` |
+| 7 | 系统卡片文案（mode_switch/task_done/notice） | `config/cards.yaml` |
+| 8 | 测试对象名单与面试官预期等级表 | 系统外表格 |
 
 ## 附录C 开发注意事项汇总（最容易做错的点）
 

@@ -1,4 +1,18 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # prism-demo
+
+## 当前仓库状态
+
+仓库目前是脚手架阶段：
+
+- 根目录尚无 `package.json`、无 workspace 配置；`src/` 和 `tests/` 为空目录
+- `docs/prd.md`、`docs/architecture.md`、`docs/api-spec.md` 是当前唯一的"实现来源"
+- `.claude/rules/*.md` 是针对具体代码范围的执行规则（含 `paths` frontmatter，对应 `apps/api/**`、`apps/web/**` 等）
+
+不要假设命令、依赖或目录结构已存在。任务开始前先确认现状，再决定是按文档创建新代码还是修改已有代码。
 
 ## 项目目标
 
@@ -35,12 +49,12 @@
 
 修改以下文件前，先说明涉及哪条约束以及对应测试：
 
-- `context.builder.ts`
-- `report.filter.ts`
-- `llm.client.ts`
-- `assessment.state.ts`
+- `context.builder.ts`（约束1：工具模式上下文隔离）
+- `report.filter.ts`（约束2：A结论锁定）
+- `llm.client.ts`（约束4：模型调用唯一出口与全量落库）
+- `assessment.state.ts`（约束5：后端控制流程推进）
 
-不要通过削弱测试断言来绕过约束。
+这四个文件是 PoC 成败的关键实现点，详见 `docs/architecture.md` 第4章。不要通过削弱测试断言来绕过约束。
 
 ## 文档入口
 
@@ -101,7 +115,8 @@ pnpm test
 pnpm build
 
 如果项目已定义专项约束测试，再运行：
-```Bash
+```bash
 pnpm test:invariants
+```
 
 不要编造未在 package.json 中定义的命令。

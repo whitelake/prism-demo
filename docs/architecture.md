@@ -97,7 +97,7 @@
                   │  ┌────────────┐  │
                   │  │   Nginx    │  │  :443 → SSL终止
                   │  │            │  │  /        → 前端静态资源
-                  │  │            │  │  /api/*   → 反代 :3000
+                  │  │            │  │  /api/v1/* → 反代 :3000
                   │  └─────┬──────┘  │  SSE 需关闭 buffering
                   │        │          │
                   │  ┌─────▼──────┐  │
@@ -117,7 +117,7 @@
 **Nginx SSE 关键配置**（容易踩坑，提前写明）：
 
 ```nginx
-location /api/chat/stream {
+location /api/v1/c/*/message/stream {
     proxy_pass http://localhost:3000;
     proxy_http_version 1.1;
     proxy_set_header Connection '';
@@ -148,12 +148,41 @@ src/
 │   └── llm.logger.ts      调用日志落库
 ├── config/
 │   ├── prompts/           4份Prompt（.md）
-│   ├── stages.yaml        阶段目标配置
-│   └── tasks.yaml         实操任务配置
+│   ├── stages.yaml        阶段目标、轮次上限配置
+│   ├── tasks.yaml         工具任务描述、时长、requireMinTurns
+│   ├── questionnaire.yaml 5道选择题题目与选项
+│   ├── levels.yaml        等级定义与必要证据（注入评估Prompt）
+│   ├── outline_blacklist.yaml  题纲黑名单正则（见4.4）
+│   └── cards.yaml         系统卡片文案（mode_switch/task_done/notice）
 └── common/
     ├── guards/
     └── filters/
 ```
+
+### stages.yaml schema 示例
+
+```yaml
+S1.1:
+  name: 开场校验
+  goal: "验证Q1自述的使用强度是否真实；获取至少1个具体的近期使用案例"
+  min_turns: 3
+  max_turns: 5
+  absolute_max_turns: 6       # 含 answer_vagueness +1 后的硬上限
+S1.2:
+  name: 核验意识
+  goal: "搞清候选人是否有主动核实AI输出的行为..."
+  min_turns: 3
+  max_turns: 5
+  absolute_max_turns: 6
+S1.3:
+  name: 深度探测
+  goal: "搞清是否存在流程级改造、可复用资产、他人采纳、组织推动..."
+  min_turns: 4
+  max_turns: 7
+  absolute_max_turns: 8
+```
+
+字段含义：`min_turns`/`max_turns` 来自 PRD 4.2；`absolute_max_turns` 是 PRD 5.1 "answer_vagueness ≥ 0.7 时本阶段最大轮次 +1（上限内）" 中"上限"的具体值。
 
 ★ 标记的两个文件是**PoC成败的关键实现点**，见第4、5章。
 
@@ -176,7 +205,7 @@ src/
 │   ├── SystemCard.tsx     ★ 模式切换卡片
 │   └── StageTimer.tsx
 └── hooks/
-    └── useSSE.ts          流式接收
+    └── useToolStream.ts   工具模式 SSE 流式接收（仅工具模式；考官模式不做流式，见4.5）
 ```
 
 **候选人端与面试官端在同一个前端应用**，用路由区分。理由：PoC规模小，拆两个应用增加部署复杂度，收益为零。
@@ -294,9 +323,10 @@ export function filterReport(
   evalC: Evaluation | null,
   judgmentB: InterviewerJudgment | null,
   outline: Outline | null,
+  failureInfo: FailureInfo | null,
 ): ReportDto {
 
-  const isLocked = 
+  const isLocked =
     assessment.status === 'pending_interview' ||   // 待现场验证
     assessment.status === 'final_evaluating';      // 终判中
 
@@ -307,14 +337,32 @@ export function filterReport(
       candidate: pick(assessment, ['candidateName', 'position']),
       outline: outline,                    // 题纲（已经过黑名单校验）
       rawLog: buildRawLog(assessment),     // 原始日志
+      transcriptDraft: judgmentB?.transcriptDraft ?? null,
       evaluationA: null,                   // ← 强制 null
       evaluationC: null,
-      judgmentB: judgmentB,                // 草稿状态可返回
+      judgmentB: judgmentB,                 // 草稿状态可返回
+      failureInfo: null,
     };
   }
 
-  // 解锁后：全部返回
-  return { ... };
+  // 解锁后：全部返回。eval_failed 状态时 evaluationA 可能为 null，failureInfo 必返回
+  return {
+    status: assessment.status,
+    candidate: pick(assessment, ['candidateName', 'position']),
+    outline,
+    rawLog: buildRawLog(assessment),
+    evaluationA: evalA,
+    evaluationC: evalC,
+    judgmentB: judgmentB ? { ...judgmentB, transcript: judgmentB.transcript } : null,
+    failureInfo,                            // stage ∈ {evaluation_a | evaluation_c | outline} | null
+  };
+}
+
+interface FailureInfo {
+  stage: 'evaluation_a' | 'evaluation_c' | 'outline';
+  reason: string;
+  occurredAt: Date;
+  canRetry: boolean;
 }
 ```
 
@@ -330,7 +378,7 @@ export function filterReport(
 
 ```typescript
 it('待现场验证状态下，接口不返回A的等级', async () => {
-  const res = await request(app).get(`/api/report/${id}`);
+  const res = await request(app).get(`/api/v1/assessments/${id}/report`);
   const text = JSON.stringify(res.body);
   expect(res.body.evaluationA).toBeNull();
   expect(text).not.toMatch(/L[0-4]/);          // 全文无等级字符串
@@ -348,32 +396,38 @@ PRD 2.5 明确要求：大模型不决定流程走向。
 // assessment.state.ts
 
 /**
- * 每轮对话结束后调用，决定是否推进。
+ * 每轮对话结束后调用，决定是否在考官模式内部推进到下一阶段。
+ * 仅处理阶段内推进；跨段（考官→工具）推进由 shouldEnterToolMode 决定。
  * 模型返回的 signals 只是输入，决策权在这里。
+ *
+ * signals 字段集合以 PRD 5.1 定义为准：
+ * goal_coverage / mentioned_process_change / mentioned_asset /
+ * mentioned_others_adoption / mentioned_team_driving / answer_vagueness
+ * 不得读取 PRD 未定义的信号（例如 candidate_stuck）。
  */
 function shouldAdvanceStage(ctx: StageContext): AdvanceDecision {
-  const { stageCode, turnIndex, signals, stageElapsedSec, totalElapsedSec } = ctx;
+  const { stageCode, turnIndex, signals, totalElapsedSec } = ctx;
   const cfg = config.stages[stageCode];
 
-  // 优先级1：总时长超限，直接结束考官模式
+  // 优先级1：第1段总时长上限15分钟。
+  // PRD 4.2：到达上限时，当前阶段完成本轮回答后立即结束，进入第2段。
+  // shouldAdvanceStage 在每轮回答结束后调用，因此命中此条件时
+  // "本轮回答已完成"自然成立，可直接跳过考官模式剩余阶段。
   if (totalElapsedSec >= 900) {
     return { advance: true, reason: 'total_timeout', skipRemaining: true };
   }
 
-  // 优先级2：候选人卡住
-  if (signals.candidate_stuck && turnIndex >= cfg.min_turns) {
-    return { advance: true, reason: 'candidate_stuck' };
-  }
-
-  // 优先级3：达到最大轮次
-  const maxTurns = signals.answer_vagueness >= 0.7 
-    ? Math.min(cfg.max_turns + 1, cfg.max_turns + 1)   // 笼统回答，+1轮
+  // 优先级2：达到最大轮次。
+  // PRD 5.1：answer_vagueness >= 0.7 时本阶段最大轮次 +1，但不超出绝对上限。
+  // absolute_max_turns 是阶段配置中的硬上限，确保任何 +1 都被框住。
+  const maxTurns = signals.answer_vagueness >= 0.7
+    ? Math.min(cfg.max_turns + 1, cfg.absolute_max_turns)
     : cfg.max_turns;
   if (turnIndex >= maxTurns) {
     return { advance: true, reason: 'max_turns' };
   }
 
-  // 优先级4：信息采集充分
+  // 优先级3：信息采集充分。
   if (turnIndex >= cfg.min_turns && signals.goal_coverage >= 0.8) {
     return { advance: true, reason: 'goal_covered' };
   }
@@ -381,16 +435,37 @@ function shouldAdvanceStage(ctx: StageContext): AdvanceDecision {
   return { advance: false };
 }
 
-/** S1.3 是否触发 */
+/**
+ * 单轮无响应超时，独立于 shouldAdvanceStage 运行（定时器触发，不在每轮结束后调用）。
+ * PRD 4.7：单轮无输入超过5分钟，前端提示；超过10分钟，该阶段自动结束进入下一阶段。
+ * 返回动作区分模式：考官模式推进到下一阶段，工具模式推进到下一任务或提交。
+ */
+function onCandidateIdle(assessmentId: string, idleSec: number, currentMode: 'examiner' | 'tool'): IdleAction {
+  if (idleSec >= 600) {
+    return currentMode === 'examiner'
+      ? { action: 'force_advance_stage', reason: 'idle_timeout' }
+      : { action: 'force_advance_task', reason: 'idle_timeout' };
+  }
+  if (idleSec >= 300) {
+    return { action: 'warn_candidate', reason: 'idle_warn' };
+  }
+  return { action: 'none' };
+}
+
+/**
+ * S1.2 结束后调用，决定下一步是进入 S1.3 还是直接进入第2段（工具模式）。
+ * PRD 4.2：未触发 S1.3 时直接进入第2段，本身就是 L2 及以下的判定信号。
+ */
 function shouldRunS13(assessmentId): boolean {
   const q = getQuestionnaire(assessmentId);
   if (['给过同事用', '有人主动来找我要'].includes(q.q3)) return true;
   if (['经常', '我是团队里主要的答疑人'].includes(q.q4)) return true;
 
-  // 累积信号：任一轮次出现过即触发
+  // 累积信号：S1.1 / S1.2 任一轮次出现过即触发
   const anySignal = db.query(`
-    SELECT 1 FROM dialogue_log 
+    SELECT 1 FROM dialogue_log
     WHERE assessment_id = ? AND mode='examiner' AND role='ai'
+      AND stage_or_task IN ('S1.1', 'S1.2')
       AND (JSON_EXTRACT(signals,'$.mentioned_process_change') = true
         OR JSON_EXTRACT(signals,'$.mentioned_asset') = true
         OR JSON_EXTRACT(signals,'$.mentioned_others_adoption') = true
@@ -398,7 +473,70 @@ function shouldRunS13(assessmentId): boolean {
     LIMIT 1`, [assessmentId]);
   return anySignal.length > 0;
 }
+
+/**
+ * 候选人放弃触发器。PRD 4.7：候选人中途关闭页面视为放弃。
+ * beforeunload 不可靠，后端不能依赖前端事件。
+ * 触发策略：候选人环节进行中超过 N 分钟（建议30分钟，等于总时长上限）
+ * 仍无任何 dialogue_log 新增，且状态仍为 in_progress，则置为 abandoned。
+ * 该检查由定时任务（每分钟一次）执行，不在请求路径上。
+ */
+function markAbandonedIfStale(assessmentId: string): void {
+  const last = db.query(`
+    SELECT MAX(ts) AS last_ts FROM dialogue_log WHERE assessment_id = ?`,
+    [assessmentId]);
+  if (last[0].last_ts && Date.now() - last[0].last_ts.getTime() > 30 * 60 * 1000) {
+    assessmentRepo.setStatus(assessmentId, 'abandoned');
+  }
+}
+
+/**
+ * 评估A产出后立即调用，决定是否触发面试官环节（PRD 4.5）。
+ * 满足任一条件即把状态从 evaluating 推到 pending_interview。
+ */
+function shouldTriggerInterview(assessmentId: string): boolean {
+  const evalA = evaluationRepo.findAByAssessment(assessmentId);
+  if (!evalA) return false;
+
+  const { overall, claimRealityGap, redLines } = evalA;
+
+  // 条件1：L3_pending / L4_pending
+  if (['L3_pending', 'L4_pending'].includes(overall.level)) return true;
+
+  // 条件2：团队负责人轨道
+  if (overall.track === '团队负责人轨道') return true;
+
+  // 条件3：置信度 < 0.6
+  if (overall.confidence < 0.6) return true;
+
+  // 条件4：自述实测落差重大
+  if (claimRealityGap?.level === '重大') return true;
+
+  // 条件5：触发任一安全红线
+  if (redLines && redLines.length > 0) return true;
+
+  return false;
+}
 ```
+
+### `shouldAdvanceStage` 适用范围说明
+
+`shouldAdvanceStage` 仅处理**考官模式内部**的阶段推进（S1.1 → S1.2 → S1.3）。工具模式任务推进不走此函数：
+- 候选人主动完成：由 `POST /api/v1/c/:token/task/complete` 触发
+- 任务时长归零：前端在 SSE `done` 事件后调 `POST /api/v1/c/:token/skip`（`reason: task_timeout`）
+- 单轮无响应超时：`onCandidateIdle` 触发，工具模式返回 `force_advance_task`，考官模式返回 `force_advance_stage`
+
+### 跨段推进的编排
+
+`shouldAdvanceStage` 只决定阶段内推进。跨段（考官模式 → 工具模式、工具模式 → 评估）的编排由调用方按以下顺序组合：
+
+1. 考官模式内：S1.1 → S1.2 由 `shouldAdvanceStage` 决定
+2. S1.2 结束时：调用 `shouldRunS13`
+   - 返回 `true`：进入 S1.3，仍由 `shouldAdvanceStage` 决定何时结束
+   - 返回 `false`：直接进入第2段（工具模式）。PRD 4.2 把此分支视为 L2 及以下的判定信号
+3. S1.3 结束时：进入第2段（无条件）
+4. 第2段内：T1 → T2 由任务完成事件或任务时长上限决定
+5. 第2段结束：状态 → `evaluating`，触发评估
 
 ### 状态定义
 
@@ -501,13 +639,16 @@ function parseJsonResponse<T>(raw: string, schema: ZodSchema<T>): T {
 ### 题纲黑名单校验
 
 ```typescript
-const BLACKLIST = [
-  /L[0-4]/,
-  /初级|中级|高级/,
-  /优秀|出色|不足|薄弱|可疑|存疑|夸大|怀疑/,
-  /使用强度|任务拆解|核验意识|流程改造|影响力|组织推动/,
-  /等级|评分|置信度/,
-];
+// 题纲黑名单从 config/outline_blacklist.yaml 读取，便于产品调优
+const BLACKLIST: RegExp[] = loadYaml('config/outline_blacklist.yaml').patterns
+  .map((p: string) => new RegExp(p));
+
+// 默认配置示例（实际以文件为准）：
+//   - \bL[0-4](_pending)?\b           # 等级字符串，要求边界避免误伤
+//   - 初级|中级|高级
+//   - 优秀|出色|不足|薄弱|可疑|存疑|夸大|怀疑
+//   - 使用强度|任务拆解|核验意识|流程改造|影响力|组织推动
+//   - 等级|评分|置信度
 
 async function generateOutline(assessmentId): Promise<Outline> {
   for (let i = 0; i < 3; i++) {
@@ -535,35 +676,37 @@ async function generateOutline(assessmentId): Promise<Outline> {
 
 ### 接口设计
 
+工具模式 SSE 端点（与 api-spec 3.6 对齐）：
+
 ```
-POST /api/candidate/:token/message
+POST /api/v1/c/:token/message/stream
+Accept: text/event-stream
+
 Body: { content: string }
+
 Response: text/event-stream
+
+event: accepted
+data: {"candidateMessageId":31,"aiMessageId":32}
 
 event: delta
 data: {"text":"你好"}
 
-event: delta
-data: {"text":"陈曦，"}
-
 event: done
-data: {"stageAdvanced":false,"nextStage":null,"remainingSec":523}
+data: {"aiMessageId":32,"turnIndex":1,"taskRemainingSec":540,"finishReason":"stop"}
 ```
 
 **关键点**：
 
 | # | 要点 |
 |---|------|
-| 1 | `signals` 不随流式返回，在 `done` 事件后由后端解析并落库 |
-| 2 | 考官模式返回JSON，流式时先累积再解析，前端只展示 `question` 字段的增量 |
-| 3 | 工具模式直接返回文本，可真流式 |
-| 4 | 前端需处理连接中断，展示"重试"按钮（PRD 6.4） |
+| 1 | 工具模式无 signals 字段（PRD 5.4），SSE 流不涉及 signals 落库；考官模式 signals 仅落库、不进入任何前端响应（PoC 约束3） |
+| 2 | 考官模式**不做流式**：考官返回 JSON，普通 POST + loading 动效即可；前端不解析流式 JSON |
+| 3 | 工具模式直接返回文本，真流式 |
+| 4 | `done` 事件**不携带阶段推进信号**；任务时长归零由前端在收到 `done` 后调用 `POST /api/v1/c/:token/skip`（`reason: task_timeout`）触发推进 |
+| 5 | 前端需处理连接中断，展示"重试"按钮（PRD 6.4） |
 
-**考官模式的流式取舍**：因为要解析JSON，考官模式的流式体验会打折（需等JSON的 `question` 字段完整）。
-
-**建议**：考官模式**不做流式**，用普通POST + loading动效即可。理由：考官模式的回复很短（40字以内），等待2–3秒可接受，而流式解析JSON会显著增加复杂度。工具模式回复长，必须流式。
-
-这个取舍能省下一天开发时间。
+**考官模式不做流式的理由**：考官模式回复很短（40 字以内），等待 2–3 秒可接受，流式解析 JSON 会显著增加复杂度。工具模式回复长，必须流式。这个取舍能省下一天开发时间。
 
 ---
 
@@ -665,10 +808,13 @@ CREATE TABLE interviewer_judgment (
   level         VARCHAR(5) NOT NULL,
   track         VARCHAR(20) NOT NULL,
   reason        TEXT NOT NULL,
-  transcript    LONGTEXT NOT NULL,         -- 面试文字记录
-  transcript_draft LONGTEXT,               -- 草稿（提交前）
+  transcript    LONGTEXT NOT NULL,         -- 面试文字记录（提交B时从draft转正，锁定）
+  transcript_draft LONGTEXT,               -- 草稿（提交前可多次保存）
   submitted_at  DATETIME
 );
+-- 草稿转正规则：POST /judgment 时把 transcript_draft 复制到 transcript，
+-- 随后 transcript_draft 可保留也可清空，但 transcript 不可再编辑。
+-- 列表/报告接口读取 transcript 字段；草稿编辑接口读写 transcript_draft。
 
 -- 三方一致性（提交B并产出C后自动计算）
 CREATE TABLE consistency (
@@ -682,6 +828,14 @@ CREATE TABLE consistency (
   max_level_gap INT,
   computed_at   DATETIME
 );
+-- max_level_gap 计算规则：
+-- 1. 把 level 归一化为数值：L0=0, L1=1, L2=2, L3=3, L4=4；
+--    L3_pending=3, L4_pending=4（pending 视为对应等级参与比较，
+--    "是否 pending"由 separate 字段或前缀判断，不进入 gap 计算）
+-- 2. max_level_gap = max(|a-b|, |b-c|, |a-c|) 的等级差绝对值
+-- 3. a_eq_b / b_eq_c / a_eq_c 仅在数值相等时为 true，
+--    pending 与确定等级视为相等（例如 A=L3_pending, C=L3 → a_eq_c=true, gap=0）
+-- 4. B 的 level 字段不含 pending（面试官直接给确定等级），无需归一化特殊处理
 ```
 
 ## 5.2 两个设计说明
@@ -692,13 +846,18 @@ CREATE TABLE consistency (
 
 ## 5.3 数据导出
 
-PoC 结束需要导出全量数据做分析。提供一个脚本，不做界面：
+PoC 结束需要导出全量数据做分析，分两种方式：
+
+| 方式 | 用途 | 形态 |
+|------|------|------|
+| HTTP 接口 | 单份导出，临时取数 | `GET /api/v1/assessments/:id/export`（详见 api-spec 4.12，含 signals 字段，PoC 分析唯一开放出口） |
+| CLI 脚本 | 批量导出，PoC 结束一次性产出 | `npm run export -- --output ./poc-data.json` |
 
 ```bash
 npm run export -- --output ./poc-data.json
 ```
 
-导出内容：每位候选人的完整日志 + A/B/C + 一致性 + 全部 `llm_call_log`。
+导出内容：每位候选人的完整日志 + A/B/C + 一致性 + 全部 `llm_call_log`。HTTP 接口与 CLI 脚本输出结构一致，仅范围不同。
 
 ---
 
@@ -708,28 +867,44 @@ npm run export -- --output ./poc-data.json
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/c/:token` | 获取测评基本信息，校验token有效性 |
-| POST | `/api/c/:token/start` | 提交姓名，状态置为进行中 |
-| POST | `/api/c/:token/questionnaire` | 提交问卷，返回第一个考官问题 |
-| POST | `/api/c/:token/message` | 提交回答（考官模式，普通POST） |
-| POST | `/api/c/:token/message/stream` | 提交提示词（工具模式，SSE） |
-| POST | `/api/c/:token/task/complete` | 主动完成当前实操任务 |
-| GET | `/api/c/:token/state` | 获取当前进度（刷新页面用） |
+| GET | `/api/v1/c/:token` | 获取测评基本信息，校验token有效性 |
+| POST | `/api/v1/c/:token/start` | 提交姓名，状态置为进行中 |
+| GET | `/api/v1/c/:token/questionnaire` | 获取问卷题目 |
+| POST | `/api/v1/c/:token/questionnaire` | 提交问卷，返回第一个考官问题 |
+| POST | `/api/v1/c/:token/message` | 提交回答（考官模式，普通POST） |
+| POST | `/api/v1/c/:token/message/stream` | 提交提示词（工具模式，SSE） |
+| POST | `/api/v1/c/:token/task/complete` | 主动完成当前实操任务 |
+| POST | `/api/v1/c/:token/skip` | 超时跳过（PRD 4.7 单轮10分钟） |
+| GET | `/api/v1/c/:token/state` | 获取当前进度（刷新页面用） |
 
-**token 设计**：32位随机字符串，与 assessment 一对一。链接形如 `https://xxx.com/a/{token}`。
+**token 设计**：32位随机字符串，与 assessment 一对一。链接形如 `https://xxx.com/a/{token}`（前端路由，非 API 路径）。
 
 ## 6.2 面试官接口（JWT 鉴权）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/auth/login` | 登录 |
-| GET | `/api/assessments` | 列表（★经过锁定过滤） |
-| POST | `/api/assessments` | 新建，返回token链接 |
-| POST | `/api/assessments/:id/regenerate` | 重新生成链接 |
-| GET | `/api/assessments/:id/report` | 报告详情（★经过 filterReport） |
-| PUT | `/api/assessments/:id/transcript` | 保存面试记录草稿 |
-| POST | `/api/assessments/:id/judgment` | 提交B（★触发解锁 + 终判） |
-| POST | `/api/assessments/:id/reevaluate` | 重新评估（评估失败时） |
+| POST | `/api/v1/auth/login` | 登录 |
+| GET | `/api/v1/auth/me` | 当前登录信息 |
+| GET | `/api/v1/assessments` | 列表（★经过锁定过滤） |
+| POST | `/api/v1/assessments` | 新建，返回token链接 |
+| POST | `/api/v1/assessments/:id/regenerate-link` | 重新生成链接 |
+| GET | `/api/v1/assessments/:id/report` | 报告详情（★经过 filterReport） |
+| GET | `/api/v1/assessments/:id/status` | 轻量轮询（终判进度） |
+| PUT | `/api/v1/assessments/:id/transcript` | 保存面试记录草稿 |
+| POST | `/api/v1/assessments/:id/judgment` | 提交B（★触发解锁 + 终判） |
+| POST | `/api/v1/assessments/:id/reevaluate` | 重新评估（评估失败时） |
+| POST | `/api/v1/assessments/:id/abandon` | 面试官手动标记放弃 |
+| GET | `/api/v1/assessments/:id/export` | 单份数据导出（含 signals，PoC 分析用） |
+| POST | `/api/v1/admin/reload-config` | 重载 Prompt / 阶段配置 / 任务配置（见9.2，热更新） |
+
+## 6.3 开发辅助接口（不公开暴露）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/docs` | Swagger UI，需 X-Admin-Key 或仅内网可访问 |
+| GET | `/api/v1/docs-json` | OpenAPI JSON，供前端 `openapi-typescript` 生成类型 |
+
+**禁止公开暴露**：Swagger 文档会泄露 Prompt 线索与考察逻辑，必须用 X-Admin-Key 或内网 ACL 限制。
 
 ---
 
@@ -795,15 +970,15 @@ npm run export -- --output ./poc-data.json
 面试官打开报告 (PENDING_INTERVIEW)
     │
     ▼
-GET /report → filterReport() → evaluationA: null  ★锁定生效
+GET /api/v1/assessments/:id/report → filterReport() → evaluationA: null  ★锁定生效
     │
     ▼
 展示：题纲 + 原始日志 + 录入框 + 判断表单
     │
-    ├─ PUT /transcript （可多次保存草稿）
+    ├─ PUT /api/v1/assessments/:id/transcript （可多次保存草稿）
     │
     ▼
-POST /judgment  （提交B）
+POST /api/v1/assessments/:id/judgment  （提交B）
     │
     ├─ 校验：transcript 非空 + level/track/reason 完整
     ├─ 落库 interviewer_judgment（transcript 从草稿转正，锁定）
@@ -812,15 +987,22 @@ POST /judgment  （提交B）
     ▼
 异步执行终判C（full_log + transcript）
     │
-    ├─ 落库 evaluation(type='C')
-    ├─ 计算 consistency
-    ├─ 状态 → COMPLETED   ★解锁
+    ├─ 成功 → 落库 evaluation(type='C') → 计算 consistency → 状态 → COMPLETED   ★解锁
     │
-    ▼
-前端轮询 /report → 展示 A/B/C 三方对比
+    └─ 失败 → 状态回退至 EVAL_FAILED（locked 仍为 true）
+                       │
+                       ▼
+              面试官调 POST /api/v1/assessments/:id/reevaluate (scope=evaluation)
+              重新执行终判C，成功后状态 → COMPLETED 解锁
 ```
 
-**前端轮询**：终判耗时约 20–40 秒，前端每3秒轮询一次状态即可，不做SSE。
+**终判C失败的处理**：
+- 状态从 `final_evaluating` 回退到 `eval_failed`，`locked` 仍为 `true`（A 仍不能展示，因面试记录已提交但 C 未产出，B 已锁定不可改）
+- 报告接口（4.6）返回 `failureInfo: { stage: 'evaluation_c', canRetry: true }`
+- 面试官调 `POST /reevaluate` 时 `scope` 必须为 `evaluation`（不重跑题纲）
+- 重试成功后状态 → `completed`，A/B/C 全部解锁
+
+**前端轮询**：终判耗时约 20–40 秒，每 3 秒轮询一次 `/status`，`locked` 变 false 后停止轮询并调 `/report` 获取完整数据，不做 SSE。
 
 ---
 
@@ -867,7 +1049,7 @@ services:
     restart: always
 ```
 
-**Prompt 热更新**：配置目录挂载到宿主机，修改 `.md` 文件后调用 `POST /api/admin/reload-config` 重载，无需重启容器。这是PRD第7章的要求（产品团队可直接修改Prompt）。
+**Prompt 热更新**：配置目录挂载到宿主机，修改 `.md` 文件后调用 `POST /api/v1/admin/reload-config` 重载，无需重启容器。这是PRD第7章的要求（产品团队可直接修改Prompt）。
 
 ## 9.3 开发排期建议
 
