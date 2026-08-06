@@ -1,0 +1,7 @@
+{
+  "display": "Node 20",
+  "typescript": {
+    "semantic": true,
+    "syntax": true
+  }
+}
