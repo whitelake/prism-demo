@@ -1,0 +1,39 @@
+# 问卷配置
+#
+# 5道选择题，由候选人在测评开始前作答。
+# Schema 详见 docs/prd.md。
+# 由产品团队维护。
+
+questions:
+  - id: Q1
+    text: 你近一个月使用AI工具的频率？
+    options:
+      - { value: A, label: "几乎每天" }
+      - { value: B, label: "每周2-3次" }
+      - { value: C, label: "每周不到1次" }
+      - { value: D, label: "几乎不用" }
+
+  - id: Q2
+    text: 脚手架占位，正式题目待产品团队补齐
+    options:
+      - { value: A, label: "占位A" }
+      - { value: B, label: "占位B" }
+      - { value: C, label: "占位C" }
+
+  - id: Q3
+    text: 脚手架占位
+    options:
+      - { value: A, label: "占位A" }
+      - { value: B, label: "占位B" }
+
+  - id: Q4
+    text: 脚手架占位
+    options:
+      - { value: A, label: "占位A" }
+      - { value: B, label: "占位B" }
+
+  - id: Q5
+    text: 脚手架占位
+    options:
+      - { value: A, label: "占位A" }
+      - { value: B, label: "占位B" }

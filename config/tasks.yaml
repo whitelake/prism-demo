@@ -1,0 +1,19 @@
+# 工具任务配置
+#
+# 工具模式任务定义。Schema 详见 docs/architecture.md 与 docs/prd.md。
+# 由产品团队维护。
+
+tasks:
+  - id: T1
+    title: 待产品团队补齐
+    description: |
+      脚手架占位。正式任务描述由产品团队维护。
+    duration_minutes: 15
+    require_min_turns: 5
+
+  - id: T2
+    title: 待产品团队补齐
+    description: |
+      脚手架占位。
+    duration_minutes: 15
+    require_min_turns: 5

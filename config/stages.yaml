@@ -1,0 +1,26 @@
+# 阶段配置
+#
+# 考官模式阶段目标与轮次约束。Schema 详见 docs/architecture.md。
+# 由产品团队维护，运行时热更新。
+
+S1.1:
+  name: 开场校验
+  goal: "验证Q1自述的使用强度是否真实；获取至少1个具体的近期使用案例"
+  min_turns: 3
+  max_turns: 5
+  absolute_max_turns: 6
+
+S1.2:
+  name: 核验意识
+  goal: "搞清候选人是否有主动核实AI输出的行为"
+  min_turns: 3
+  max_turns: 5
+  absolute_max_turns: 6
+
+S1.3:
+  name: 深度探测
+  goal: "搞清是否存在流程级改造、可复用资产、他人采纳、组织推动"
+  min_turns: 4
+  max_turns: 6
+  absolute_max_turns: 8
+  trigger: see_prd_5_2

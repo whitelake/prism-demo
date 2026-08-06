@@ -1,0 +1,24 @@
+{
+  "name": "prism-demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI素质测评PoC（prism-demo）",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@11.1.2",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@nestjs/core",
+      "esbuild"
+    ]
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel --stream run dev",
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
+    "test:invariants": "pnpm -r run test:invariants",
+    "lint": "pnpm -r run lint",
+    "typecheck": "pnpm -r run typecheck"
+  }
+}

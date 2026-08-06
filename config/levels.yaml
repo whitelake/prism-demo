@@ -1,0 +1,38 @@
+# 等级定义
+#
+# 注入到评估 Prompt 中用于等级判定。
+# Schema 详见 docs/prd.md。
+# 由产品团队维护。
+
+levels:
+  - level: L1
+    name: 入门
+    definition: |
+      脚手架占位。正式定义待产品团队补齐。
+    required_evidence: []
+
+  - level: L2
+    name: 入门到熟练之间
+    definition: |
+      脚手架占位。
+    required_evidence: []
+
+  - level: L3
+    name: 熟练
+    definition: |
+      脚手架占位。
+    required_evidence: []
+    pending_rule: see_prd_5_3
+
+  - level: L4
+    name: 熟练到专家之间
+    definition: |
+      脚手架占位。
+    required_evidence: []
+    pending_rule: see_prd_5_3
+
+  - level: L5
+    name: 专家
+    definition: |
+      脚手架占位。
+    required_evidence: []

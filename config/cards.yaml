@@ -1,0 +1,20 @@
+# 系统卡片文案
+#
+# 候选人端可见的系统卡片。Schema 详见 docs/api-spec.md。
+# 由产品团队维护。
+
+cards:
+  mode_switch:
+    title: 进入工具模式
+    body: |
+      脚手架占位。正式文案待产品团队补齐。
+
+  task_done:
+    title: 任务完成
+    body: |
+      脚手架占位。正式文案待产品团队补齐。
+
+  notice:
+    title: 系统通知
+    body: |
+      脚手架占位。正式文案待产品团队补齐。
