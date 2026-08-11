@@ -103,13 +103,15 @@ export class LlmClient {
     const client = new OpenAI({
       apiKey,
       baseURL: getApiBase(),
-      timeout: baseline.timeout_ms,
+      timeout: purposeParams.timeout_ms ?? baseline.timeout_ms,
     });
 
     const retry = getRetryConfig();
     let lastError: unknown = null;
+    let lastRaw: string | undefined;
     let temperature = purposeParams.temperature;
     let jsonAttempt = 0;
+    let schemaAttempt = 0;
     let netAttempt = 0;
     // 单次 call 的绝对上限：取两类重试预算的较大者，防止异常情况下死循环
     const hardCap = Math.max(
@@ -148,6 +150,7 @@ export class LlmClient {
         const raw = this.extractContent(
           completion as OpenAI.Chat.Completions.ChatCompletion,
         );
+        lastRaw = raw;
         const latencyMs = Date.now() - startedAt;
         const nonStream = completion as OpenAI.Chat.Completions.ChatCompletion;
         const promptTokens = nonStream.usage?.prompt_tokens;
@@ -178,6 +181,7 @@ export class LlmClient {
       } catch (e) {
         lastError = e;
         const isJsonError = e instanceof Error && e.name === 'JsonParseError';
+        const isSchemaError = e instanceof Error && e.name === 'SchemaValidationError';
         const isEmptyContent = e instanceof Error && e.message === '[LlmClient] empty content in completion';
 
         // DashScope 在长 prompt + response_format=json_object 下偶发返回空 content，
@@ -191,6 +195,24 @@ export class LlmClient {
             );
             continue;
           }
+          break;
+        }
+
+        // schema 校验失败（LLM 返回 JSON 但缺字段或类型不符）：
+        // 按 llm_params.retry.schema_validation_fail 重试（temperature 不变，再试一次）
+        // 常见原因：qwen3.7-flash 偶发省略 signals 字段或把 question 写成空对象
+        if (isSchemaError) {
+          schemaAttempt += 1;
+          if (schemaAttempt < retry.schema_validation_fail.max_attempts) {
+            const step = retry.schema_validation_fail.temperature_step;
+            temperature = Math.max(0, temperature + step);
+            console.log(`[LlmClient] schema validation fail raw (attempt ${schemaAttempt}/${retry.schema_validation_fail.max_attempts}) =>`, lastRaw);
+            this.logger.warn(
+              `[LlmClient] schema validation fail attempt=${schemaAttempt}/${retry.schema_validation_fail.max_attempts} retrying at temperature=${temperature}`,
+            );
+            continue;
+          }
+          console.log(`[LlmClient] schema validation fail raw (final, giving up) =>`, lastRaw);
           break;
         }
 
@@ -218,6 +240,7 @@ export class LlmClient {
 
     const latencyMs = Date.now() - startedAt;
     await this.llmLogger.logResponse(logId, {
+      responseRaw: lastRaw,
       status: 'failed',
       errorMsg: String(lastError),
       latencyMs,
@@ -276,7 +299,7 @@ export class LlmClient {
     const client = new OpenAI({
       apiKey,
       baseURL: getApiBase(),
-      timeout: baseline.timeout_ms,
+      timeout: purposeParams.timeout_ms ?? baseline.timeout_ms,
     });
 
     let fullText = '';

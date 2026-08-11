@@ -117,6 +117,11 @@
   }
 }
 
+【反例 — 严禁返回以下结构】
+不要把响应包成数组，不要使用工具调用风格（`[{"name": ..., "arguments": ...}]`），
+不要把 question 或 signals 包进 arguments 字段。直接返回上面的对象本身，外层
+不带方括号、不带 name/arguments 字段。
+
 ## signals 字段填写说明
 
 **goal_coverage**（0.0–1.0）

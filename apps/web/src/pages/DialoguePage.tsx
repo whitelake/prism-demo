@@ -46,6 +46,8 @@ export function DialoguePage({ token, initial, onFinished }: Props) {
   const [tick, setTick] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const skipGuardRef = useRef(false);
+  const sendGuardRef = useRef(false);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     const t = setInterval(() => setTick((n) => n + 1), 1000);
@@ -55,6 +57,13 @@ export function DialoguePage({ token, initial, onFinished }: Props) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [state.messages.length, streamingText]);
+
+  // AI 回复完成后自动聚焦输入框：submitting/thinking/streamingAiId 任一为 true 表示进行中，
+  // 三者都为 false 时（含首轮首问生成完）触发 focus。submitting 用 ref guard 跟踪避免漏触发
+  useEffect(() => {
+    if (submitting || thinking || streamingAiId != null) return;
+    inputRef.current?.focus();
+  }, [submitting, thinking, streamingAiId]);
 
   // 首问异步生成：进入对话页时若 messages 为空，轮询 GET /state 直到首问落库
   useEffect(() => {
@@ -320,13 +329,21 @@ export function DialoguePage({ token, initial, onFinished }: Props) {
   }, [taskRemaining, state.step, state.inputEnabled, submitting]);
 
   async function handleSend() {
+    // 防并发：React state 是异步的，submitting 还未变 true 时连续回车/点击会重复触发
+    // sendGuardRef 是同步 ref，立即生效；return 后 ref 已被设回 false 由 finally 保证
+    if (sendGuardRef.current) return;
     const content = input.trim();
     if (!content) return;
-    if (state.step === 'examiner') {
-      setInput('');
-      await handleExaminerSubmit(content);
-    } else {
-      await handleToolSubmit(content);
+    sendGuardRef.current = true;
+    try {
+      if (state.step === 'examiner') {
+        setInput('');
+        await handleExaminerSubmit(content);
+      } else {
+        await handleToolSubmit(content);
+      }
+    } finally {
+      sendGuardRef.current = false;
     }
   }
 
@@ -334,7 +351,7 @@ export function DialoguePage({ token, initial, onFinished }: Props) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      <div style={{ flex: 1, overflowY: 'auto', padding: 16, background: '#fafafa' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 16, background: 'var(--pd-bg)' }}>
         <div style={{ maxWidth: 720, margin: '0 auto' }}>
           <MessageList
             messages={state.messages}
@@ -347,17 +364,18 @@ export function DialoguePage({ token, initial, onFinished }: Props) {
           <div ref={messagesEndRef} />
         </div>
       </div>
-      <div style={{ padding: 12, background: '#fff', borderTop: '1px solid #eee' }}>
+      <div style={{ padding: 12, background: 'var(--pd-surface)', borderTop: '1px solid var(--pd-border)' }}>
         <div style={{ maxWidth: 720, margin: '0 auto' }}>
           {state.timer && (
             <TimerBar timer={state.timer} step={state.step} idleSec={idleSec} showIdleWarn={showIdleWarn} />
           )}
           {error && <Alert type="error" message={error} showIcon style={{ marginBottom: 8 }} />}
           <Input.TextArea
+            ref={inputRef as any}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder={state.step === 'tool' ? '像平时使用AI一样输入你的需求' : '请输入你的回答'}
-            autoSize={{ minRows: 3, maxRows: 8 }}
+            autoSize={{ minRows: 5, maxRows: 12 }}
             disabled={inputDisabled}
             onPressEnter={(e) => {
               if (!e.shiftKey) {

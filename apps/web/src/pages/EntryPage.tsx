@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Alert, Button, Card, Form, Input, Typography } from 'antd';
+import { Alert, Button, Form, Input, Typography } from 'antd';
 import type { EntryInfo } from '@prism/shared';
 import { candidateApi, ApiException } from '../api/client';
+import { CenteredCardLayout } from '../components/CenteredCardLayout';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -40,28 +41,27 @@ export function EntryPage({ token, entry, onStarted }: Props) {
   }
 
   return (
-    <div style={{ maxWidth: 720, margin: '40px auto', padding: 24 }}>
-      <Card>
-        <Title level={3}>{entry.position} 测评</Title>
-        <Paragraph type="secondary">预计 {entry.estimatedMinutes} 分钟</Paragraph>
-        <Paragraph style={{ whiteSpace: 'pre-wrap' }}>{entry.notice}</Paragraph>
-        <Form layout="vertical" onFinish={handleStart}>
-          <Form.Item label="确认你的姓名" required>
-            <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={20} placeholder="如面试官录入有误可修改" />
-          </Form.Item>
-          {error && (
-            <Form.Item>
-              <Alert type="error" message={error} showIcon />
-            </Form.Item>
-          )}
+    <CenteredCardLayout
+      title={<Title level={3} style={{ marginTop: 0 }}>{entry.position} 测评</Title>}
+      subtitle={<Paragraph type="secondary">预计 {entry.estimatedMinutes} 分钟</Paragraph>}
+    >
+      <Paragraph style={{ whiteSpace: 'pre-wrap' }}>{entry.notice}</Paragraph>
+      <Form layout="vertical" onFinish={handleStart}>
+        <Form.Item label="确认你的姓名" required>
+          <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={20} placeholder="如面试官录入有误可修改" />
+        </Form.Item>
+        {error && (
           <Form.Item>
-            <Button type="primary" htmlType="submit" loading={loading} block>
-              开始测评
-            </Button>
+            <Alert type="error" message={error} showIcon />
           </Form.Item>
-        </Form>
-        <Text type="secondary">开始后即视为同意按实际情况作答。</Text>
-      </Card>
-    </div>
+        )}
+        <Form.Item>
+          <Button type="primary" htmlType="submit" loading={loading} block>
+            开始测评
+          </Button>
+        </Form.Item>
+      </Form>
+      <Text type="secondary">开始后即视为同意按实际情况作答。</Text>
+    </CenteredCardLayout>
   );
 }

@@ -52,7 +52,12 @@ const ALLOWED_TRANSITIONS: Record<AssessmentStatus, AssessmentStatus[]> = {
   [AssessmentStatus.COMPLETED]: [],
   [AssessmentStatus.ABANDONED]: [],
   // 评估失败可重新评估（PRD 4.7）
-  [AssessmentStatus.EVAL_FAILED]: [AssessmentStatus.EVALUATING],
+  // EVAL_FAILED 来源有两类：初始评估失败（EVALUATING→EVAL_FAILED）与终判失败（FINAL_EVALUATING→EVAL_FAILED）
+  // 重新评估入口（POST /:id/reevaluate）由 service 按 submitted_at 是否存在决定走 EVALUATING 还是 FINAL_EVALUATING
+  [AssessmentStatus.EVAL_FAILED]: [
+    AssessmentStatus.EVALUATING,
+    AssessmentStatus.FINAL_EVALUATING,
+  ],
 };
 
 export function canTransition(

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Button, Card, Checkbox, Form, Radio, Typography, message } from 'antd';
 import type { QuestionItem, QuestionnaireAnswers, StepResponse } from '@prism/shared';
 import { candidateApi, ApiException } from '../api/client';
+import { CenteredCardLayout } from '../components/CenteredCardLayout';
 
 const { Title, Paragraph } = Typography;
 
@@ -70,46 +71,45 @@ export function QuestionnairePage({ token, onSubmitted }: Props) {
   if (loading) return <Card loading style={{ maxWidth: 720, margin: '40px auto' }} />;
 
   return (
-    <div style={{ maxWidth: 720, margin: '40px auto', padding: 24 }}>
-      <Card>
-        <Title level={3}>基本信息问卷</Title>
-        <Paragraph type="secondary">请根据实际情况作答，没有标准答案。</Paragraph>
-        <Form layout="vertical">
-          {questions.map((q) => (
-            <Form.Item
-              key={q.code}
-              label={`${q.code}. ${q.title}${q.required ? ' *' : ''}`}
-              required={q.required}
-            >
-              {q.type === 'single' && (
-                <Radio.Group value={answers[q.code] as string} onChange={(e) => setSingle(q.code, e.target.value)}>
-                  {(q.options || []).map((opt) => (
-                    <Radio key={opt.value} value={opt.value} style={{ display: 'block', margin: '8px 0' }}>
-                      {opt.label}
-                    </Radio>
-                  ))}
-                </Radio.Group>
-              )}
-              {q.type === 'multiple' && (
-                <Checkbox.Group
-                  value={(answers[q.code] as string[]) || []}
-                  onChange={(values) => setMultiple(q.code, values as string[])}
-                >
-                  {(q.options || []).map((opt) => (
-                    <Checkbox key={opt.value} value={opt.value} style={{ display: 'block', margin: '8px 0' }}>
-                      {opt.label}
-                    </Checkbox>
-                  ))}
-                </Checkbox.Group>
-              )}
-            </Form.Item>
-          ))}
-        </Form>
-        {error && <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} />}
-        <Button type="primary" onClick={handleSubmit} loading={submitting} block size="large">
-          提交并开始对话
-        </Button>
-      </Card>
-    </div>
+    <CenteredCardLayout
+      title={<Title level={3} style={{ marginTop: 0 }}>基本信息问卷</Title>}
+      subtitle={<Paragraph type="secondary">请根据实际情况作答，没有标准答案。</Paragraph>}
+    >
+      <Form layout="vertical">
+        {questions.map((q) => (
+          <Form.Item
+            key={q.code}
+            label={`${q.code}. ${q.title}${q.required ? ' *' : ''}`}
+            required={q.required}
+          >
+            {q.type === 'single' && (
+              <Radio.Group value={answers[q.code] as string} onChange={(e) => setSingle(q.code, e.target.value)}>
+                {(q.options || []).map((opt) => (
+                  <Radio key={opt.value} value={opt.value} style={{ display: 'block', margin: '8px 0' }}>
+                    {opt.label}
+                  </Radio>
+                ))}
+              </Radio.Group>
+            )}
+            {q.type === 'multiple' && (
+              <Checkbox.Group
+                value={(answers[q.code] as string[]) || []}
+                onChange={(values) => setMultiple(q.code, values as string[])}
+              >
+                {(q.options || []).map((opt) => (
+                  <Checkbox key={opt.value} value={opt.value} style={{ display: 'block', margin: '8px 0' }}>
+                    {opt.label}
+                  </Checkbox>
+                ))}
+              </Checkbox.Group>
+            )}
+          </Form.Item>
+        ))}
+      </Form>
+      {error && <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} />}
+      <Button type="primary" onClick={handleSubmit} loading={submitting} block size="large">
+        提交并开始对话
+      </Button>
+    </CenteredCardLayout>
   );
 }

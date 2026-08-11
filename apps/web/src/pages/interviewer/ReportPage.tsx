@@ -17,6 +17,7 @@ import {
 } from 'antd';
 import type { Report, LockedReport, UnlockedReport } from '@prism/shared';
 import { interviewerApi, ApiException } from '../../api/client';
+import { InterviewerShell } from '../../components/InterviewerShell';
 import { RawLogView } from './RawLogView';
 import { OutlineView } from './OutlineView';
 import { EvaluationView } from './EvaluationView';
@@ -90,28 +91,30 @@ export function ReportPage() {
 
   if (loading) {
     return (
-      <div style={{ padding: 48, textAlign: 'center' }}>
-        <Spin />
-      </div>
+      <InterviewerShell maxWidth={960} showBack>
+        <div style={{ padding: 48, textAlign: 'center' }}>
+          <Spin />
+        </div>
+      </InterviewerShell>
     );
   }
 
   if (error) {
     return (
-      <div style={{ maxWidth: 960, margin: '24px auto', padding: 24 }}>
+      <InterviewerShell maxWidth={960} showBack>
         <Alert type="error" message={error} showIcon />
         <Button style={{ marginTop: 16 }} onClick={() => navigate('/interviewer')}>
           返回列表
         </Button>
-      </div>
+      </InterviewerShell>
     );
   }
 
   if (!report) return null;
 
   return (
-    <div style={{ maxWidth: 960, margin: '24px auto', padding: 24 }}>
-      <Card>
+    <InterviewerShell maxWidth={960} showBack>
+      <Card className="pd-card-enter">
         <Space style={{ justifyContent: 'space-between', width: '100%' }}>
           <Space direction="vertical" size={0}>
             <Title level={3} style={{ margin: 0 }}>
@@ -125,7 +128,6 @@ export function ReportPage() {
               )}
             </Space>
           </Space>
-          <Button onClick={() => navigate('/interviewer')}>返回列表</Button>
         </Space>
       </Card>
 
@@ -155,7 +157,7 @@ export function ReportPage() {
           <UnlockedView report={report} onPollingDone={load} onPolling={setPolling} />
         )}
       </div>
-    </div>
+    </InterviewerShell>
   );
 }
 

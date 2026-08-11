@@ -15,6 +15,8 @@ export interface PurposeParams {
   // false 可关闭 thinking，单次延迟从 30-70s 降到 2-5s
   // examiner/tool 只需短问答或 JSON，关闭合理；eval/outline 需深思，保留默认
   enable_thinking?: boolean;
+  // 单 purpose override baseline.timeout_ms；thinking 模式下 eval/outline 可能远超 60s
+  timeout_ms?: number;
 }
 
 export interface RetryConfig {

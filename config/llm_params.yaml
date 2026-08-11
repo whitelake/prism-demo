@@ -21,8 +21,8 @@ retry:
     max_attempts: 2
     temperature_step: -0.1   # 每次重试 temperature 下调 0.1
   schema_validation_fail:
-    max_attempts: 2
-    temperature_step: 0      # 不变，再试一次
+    max_attempts: 3
+    temperature_step: -0.1   # 降温重试，给 LLM 机会退出 tool_calls 风格输出
   network_timeout:
     max_attempts: 3
     backoff_ms: [1000, 2000, 4000]   # 指数退避
@@ -55,6 +55,9 @@ purposes:
     # R3（architecture.md 第10章）：终判输入预估 40K tokens
     # llm.client 调用前估算超限抛 INPUT_TOO_LONG；final-evaluation 按 R3 优先级截断后重试
     max_input_tokens: 40000
+    # thinking 模式下 qwen3.7-plus 评估复杂对话单次可能 3-5 分钟，override 到 5 分钟
+    # baseline.timeout_ms=60s 不够，会触发 SDK 内部 maxRetries=2 × 60s 浪费 3 分钟再抛错
+    timeout_ms: 300000
 
   outline:
     # 题纲生成：略有灵活度但需稳定

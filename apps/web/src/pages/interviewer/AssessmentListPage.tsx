@@ -17,6 +17,7 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import type { ListItem } from '@prism/shared';
 import { interviewerApi, ApiException, clearJwt, getInterviewer } from '../../api/client';
+import { InterviewerShell } from '../../components/InterviewerShell';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -144,8 +145,8 @@ export function AssessmentListPage() {
   }
 
   return (
-    <div style={{ maxWidth: 1200, margin: '24px auto', padding: 24 }}>
-      <Card>
+    <InterviewerShell>
+      <Card className="pd-card-enter">
         <Space style={{ justifyContent: 'space-between', width: '100%', marginBottom: 16 }}>
           <div>
             <Title level={3} style={{ margin: 0 }}>
@@ -155,12 +156,9 @@ export function AssessmentListPage() {
               {interviewer ? `欢迎，${interviewer.name}` : ''}
             </Paragraph>
           </div>
-          <Space>
-            <Button onClick={() => { clearJwt(); navigate('/login'); }}>退出登录</Button>
-            <Button type="primary" onClick={() => setCreateOpen(true)}>
-              创建测评
-            </Button>
-          </Space>
+          <Button type="primary" onClick={() => setCreateOpen(true)}>
+            创建测评
+          </Button>
         </Space>
 
         <Space style={{ marginBottom: 16 }} wrap>
@@ -219,6 +217,6 @@ export function AssessmentListPage() {
           </Form.Item>
         </Form>
       </Modal>
-    </div>
+    </InterviewerShell>
   );
 }

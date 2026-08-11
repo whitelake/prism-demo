@@ -1,4 +1,4 @@
-import { Alert, Card, Spin, Tag, Typography } from 'antd';
+import { Alert, Card, Spin, Typography } from 'antd';
 import type { DialogueMessage, DialogueMode } from '@prism/shared';
 
 const { Text, Paragraph } = Typography;
@@ -13,7 +13,9 @@ interface Props {
 }
 
 // 候选人/ai 气泡 + system_card 卡片。系统卡片与普通消息明显区分（frontend.md）。
+// 外层 div 的 alignSelf inline style 保留以兼容单测；内层气泡用 class。
 export function MessageList({ messages, mode, streamingAiId, streamingText, thinking, thinkingText }: Props) {
+  const aiBubbleClass = mode === 'tool' ? 'pd-bubble pd-bubble--tool' : 'pd-bubble pd-bubble--examiner';
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {messages.map((m) => {
@@ -30,16 +32,7 @@ export function MessageList({ messages, mode, streamingAiId, streamingText, thin
               maxWidth: '80%',
             }}
           >
-            <div
-              style={{
-                padding: '10px 14px',
-                borderRadius: 12,
-                background: isCandidate ? '#1677ff22' : '#f5f5f5',
-                border: isCandidate ? '1px solid #1677ff55' : '1px solid #e8e8e8',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-              }}
-            >
+            <div className={isCandidate ? 'pd-bubble pd-bubble--candidate' : aiBubbleClass}>
               {isStreaming && (streamingText || '')}
               {!isStreaming && m.content}
               {isStreaming && <span className="cursor">▋</span>}
@@ -50,34 +43,16 @@ export function MessageList({ messages, mode, streamingAiId, streamingText, thin
       {/* 思考中气泡：examiner 模式提交后等响应、tool 模式 accepted 后等首个 delta */}
       {thinking && !streamingAiId && (
         <div style={{ alignSelf: 'flex-start', maxWidth: '80%' }}>
-          <div
-            style={{
-              padding: '10px 14px',
-              borderRadius: 12,
-              background: '#f5f5f5',
-              border: '1px solid #e8e8e8',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-            }}
-          >
+          <div className="pd-bubble pd-bubble--thinking">
             <Spin size="small" />
-            <span style={{ color: '#999', fontSize: 14 }}>{thinkingText || '正在思考...'}</span>
+            <span>{thinkingText || '正在思考...'}</span>
           </div>
         </div>
       )}
       {/* 流式中尚未落库的 ai 气泡 */}
       {streamingAiId && !messages.some((m) => m.id === streamingAiId) && (
         <div style={{ alignSelf: 'flex-start', maxWidth: '80%' }}>
-          <div
-            style={{
-              padding: '10px 14px',
-              borderRadius: 12,
-              background: '#f5f5f5',
-              border: '1px solid #e8e8e8',
-              whiteSpace: 'pre-wrap',
-            }}
-          >
+          <div className={aiBubbleClass}>
             {streamingText || ''}
             <span className="cursor">▋</span>
           </div>
@@ -85,9 +60,10 @@ export function MessageList({ messages, mode, streamingAiId, streamingText, thin
       )}
       {/* mode 标识条 */}
       <div style={{ textAlign: 'center', marginTop: 8 }}>
-        <Tag color={mode === 'tool' ? 'green' : 'blue'}>
+        <div className={`mode-pill ${mode === 'tool' ? 'mode-pill--tool' : 'mode-pill--examiner'}`}>
+          <span className="dot" />
           {mode === 'tool' ? '当前为普通AI助手' : '考官对话中'}
-        </Tag>
+        </div>
       </div>
     </div>
   );
@@ -96,16 +72,25 @@ export function MessageList({ messages, mode, streamingAiId, streamingText, thin
 function SystemCardView({ msg }: { msg: DialogueMessage }) {
   if (!msg.card) return null;
   const { variant, title, body, attachment } = msg.card;
-  const cardStyle =
+  // 顶部 accent line 颜色按 variant 区分；与 AI 气泡形状明显不同（更大圆角 + 标题栏 + 更宽）
+  const accentColor =
     variant === 'mode_switch'
-      ? { background: '#fff7e6', borderColor: '#ffd591' }
+      ? 'var(--pd-warn)'
       : variant === 'task_brief'
-      ? { background: '#f6ffed', borderColor: '#b7eb8f' }
+      ? 'var(--pd-accent)'
       : variant === 'task_done'
-      ? { background: '#f0f5ff', borderColor: '#adc6ff' }
-      : { background: '#fafafa', borderColor: '#d9d9d9' };
+      ? 'var(--pd-success)'
+      : 'var(--pd-border-2)';
+  const cardStyle: React.CSSProperties = {
+    margin: '8px 0',
+    background: 'var(--pd-surface)',
+    borderColor: 'var(--pd-border)',
+    borderRadius: 'var(--pd-radius-lg)',
+    boxShadow: 'var(--pd-shadow-card)',
+    borderTop: `2px solid ${accentColor}`,
+  };
   return (
-    <Card size="small" style={{ margin: '8px 0', ...cardStyle }} title={title}>
+    <Card size="small" style={cardStyle} title={title}>
       {body && <Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: attachment ? 12 : 0 }}>{body}</Paragraph>}
       {attachment && (
         <Card size="small" type="inner" title={attachment.label} style={{ marginTop: 8 }}>

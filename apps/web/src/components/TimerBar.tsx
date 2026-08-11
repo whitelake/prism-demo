@@ -35,14 +35,20 @@ export function TimerBar({ timer, step, idleSec, showIdleWarn }: Props) {
         )}
       </Space>
       {remaining != null && (
-        <Progress percent={percent} showInfo={false} size="small" status={percent < 20 ? 'exception' : 'active'} />
+        <Progress
+          percent={percent}
+          showInfo={false}
+          size="small"
+          status={percent < 20 ? 'exception' : 'active'}
+          strokeColor={percent < 20 ? 'var(--pd-error)' : 'var(--pd-accent)'}
+        />
       )}
       {showIdleWarn && (
         <Alert
           type="warning"
           message={`已空闲 ${idleSec} 秒，超过 ${timer.idleSkipAtSec} 秒将自动跳过本环节`}
           showIcon
-          style={{ marginTop: 4 }}
+          style={{ marginTop: 4, borderRadius: 'var(--pd-radius)' }}
         />
       )}
     </div>

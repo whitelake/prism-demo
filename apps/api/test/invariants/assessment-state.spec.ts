@@ -75,6 +75,14 @@ describe('assessment.state 状态机不变量 (PoC 不变量 5)', () => {
           AssessmentStatus.EVALUATING,
         ),
       ).toBe(true);
+      // 终判失败（FINAL_EVALUATING→EVAL_FAILED）后重新评估需回到 FINAL_EVALUATING
+      // PRD 4.7 评估失败可重新评估；service 路径见 reevaluate
+      expect(
+        canTransition(
+          AssessmentStatus.EVAL_FAILED,
+          AssessmentStatus.FINAL_EVALUATING,
+        ),
+      ).toBe(true);
     });
 
     it('非法转移被拒绝', () => {

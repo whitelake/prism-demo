@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Alert, Button, Card, Form, Input, Typography } from 'antd';
+import { Alert, Button, Form, Input, Typography } from 'antd';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { interviewerApi, setJwt, ApiException } from '../../api/client';
+import { CenteredCardLayout } from '../../components/CenteredCardLayout';
 
 const { Title, Paragraph } = Typography;
 
@@ -38,23 +39,25 @@ export function LoginPage() {
   }
 
   return (
-    <div style={{ maxWidth: 480, margin: '80px auto', padding: 24 }}>
-      <Card>
-        <Title level={3}>面试官登录</Title>
-        <Paragraph type="secondary">prism-demo 测评管理后台</Paragraph>
-        <Form layout="vertical" onFinish={handleSubmit}>
-          <Form.Item label="账号" required>
-            <Input value={account} onChange={(e) => setAccount(e.target.value)} placeholder="面试官账号" />
-          </Form.Item>
-          <Form.Item label="密码" required>
-            <Input.Password value={password} onChange={(e) => setPassword(e.target.value)} placeholder="密码" />
-          </Form.Item>
-          {error && <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} />}
-          <Button type="primary" htmlType="submit" loading={loading} block>
-            登录
-          </Button>
-        </Form>
-      </Card>
-    </div>
+    <CenteredCardLayout maxWidth={480}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <span style={{ fontSize: 22, color: 'var(--pd-accent)' }}>◐</span>
+        <span style={{ fontSize: 18, fontWeight: 500, letterSpacing: '0.04em' }}>PRISM</span>
+      </div>
+      <Title level={3} style={{ marginTop: 0 }}>面试官登录</Title>
+      <Paragraph type="secondary">prism-demo 测评管理后台</Paragraph>
+      <Form layout="vertical" onFinish={handleSubmit}>
+        <Form.Item label="账号" required>
+          <Input value={account} onChange={(e) => setAccount(e.target.value)} placeholder="面试官账号" />
+        </Form.Item>
+        <Form.Item label="密码" required>
+          <Input.Password value={password} onChange={(e) => setPassword(e.target.value)} placeholder="密码" />
+        </Form.Item>
+        {error && <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} />}
+        <Button type="primary" htmlType="submit" loading={loading} block>
+          登录
+        </Button>
+      </Form>
+    </CenteredCardLayout>
   );
 }
