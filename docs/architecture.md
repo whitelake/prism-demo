@@ -1078,12 +1078,16 @@ services:
 |---|------|------|------|
 | R1 | **域名备案周期超预期** | 阻塞上线 | 第1天启动；备选香港地域ECS免备案 |
 | R2 | **评估JSON格式不稳定** | 评估失败率高 | 已设计三层防御（剥离/提取/重试）；Spike已初步验证 |
-| R3 | **终判输入超模型上下文上限** | 终判失败 | 预估40K tokens；若超限，对工具模式AI回复做截断（保留候选人输入全文，AI回复只留前500字） |
+| R3 | **终判输入超模型上下文上限** | 终判失败 | 配置项 `purposes.eval.max_input_tokens=40000`；`llm.client.ts` 调用前估算输入 tokens，超限抛 `INPUT_TOO_LONG`；`final-evaluation.service.ts` 的 `buildFullLog` 按 R3 优先级截断后重试 |
 | R4 | **工具模式AI仍表现出"知道在被测评"** | H3无法验证 | 附录3验收项2（U1–U10）必须全通过才进入测试 |
 | R5 | **结论隐藏被绕过** | H2/H4数据作废 | 服务端过滤 + 自动化测试 + Code Review三重保障 |
 | R6 | 模型API限流 | 对话卡顿 | 5并发下概率极低；已有指数退避重试 |
 
 ## R3 的截断策略（提前定义，避免临时决策）
+
+终判输入上限由 `config/llm_params.yaml` 的 `purposes.eval.max_input_tokens` 配置（默认 40000）。`llm.client.ts` 在每次调用前用启发式 token 估算器（中文 1 token/字符，ASCII 约 0.25 token/字符）估算 system+user 消息总 tokens；超限时抛 `INPUT_TOO_LONG`，`llm_call_log` 落 `status=failed` + `error_msg`。
+
+`final-evaluation.service.ts` 在收到 `INPUT_TOO_LONG` 后，调用 `truncateFullLog` 按 R3 优先级截断后重试一次；仍超限则状态回退 `EVAL_FAILED`。
 
 若终判输入超限，按以下优先级截断：
 

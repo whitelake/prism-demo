@@ -7,7 +7,8 @@
 # 注：model 与 api_base 从 env 读取（LLM_MODEL、DASHSCOPE_BASE_URL），不在此处配置
 baseline:
   timeout_ms: 60000
-  max_tokens: 2048
+  max_tokens: 2048            # 输出 token 上限
+  max_input_tokens: null     # 输入 token 上限（null 表示不检查）；eval purpose 必须显式设置
   top_p: 0.9
   presence_penalty: 0
   frequency_penalty: 0
@@ -32,13 +33,16 @@ purposes:
     # 考官模式对话：需要自然的对话变化，但不能跑题
     temperature: 0.6
     stream: true              # 前端 SSE 流式
-    max_tokens: 1024
+    max_tokens: 256
+    response_format: json_object   # 强制 JSON 输出，避免 markdown 包裹触发 JsonParseError 重试
+    enable_thinking: false         # 关闭思维链，单次延迟从 30-70s 降到 2-5s；examiner 只需短问答不需深思
 
   tool:
     # 工具模式：模拟正常 AI 助手的默认行为
     temperature: 0.7
     stream: true
     max_tokens: 1024
+    enable_thinking: false         # 关闭思维链，模拟普通 AI 助手的快速响应
     # 注意：工具模式 Prompt 必须静态（PoC 不变量 1），参数 override 不影响上下文隔离
 
   eval:
@@ -47,6 +51,10 @@ purposes:
     stream: false
     response_format: json_object   # 强制 JSON 输出，经 Schema 校验
     max_tokens: 4096
+    # eval 需要深思，保留 thinking 默认（不设 enable_thinking）
+    # R3（architecture.md 第10章）：终判输入预估 40K tokens
+    # llm.client 调用前估算超限抛 INPUT_TOO_LONG；final-evaluation 按 R3 优先级截断后重试
+    max_input_tokens: 40000
 
   outline:
     # 题纲生成：略有灵活度但需稳定
@@ -54,3 +62,4 @@ purposes:
     stream: false
     response_format: json_object
     max_tokens: 2048
+    # outline 需要深思，保留 thinking 默认（不设 enable_thinking）

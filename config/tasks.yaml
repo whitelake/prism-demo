@@ -1,19 +1,37 @@
 # 工具任务配置
 #
-# 工具模式任务定义。Schema 详见 docs/architecture.md 与 docs/prd.md。
+# 工具模式任务定义。Schema 详见 docs/architecture.md 与 docs/prd.md 4.3。
 # 由产品团队维护。
+#
+# 规则（PRD 4.3）：
+#   - T1 → T2 顺序固定，各自独立的干净上下文
+#   - 候选人可主动点击"完成本环节"提前结束
+#   - 时长到达自动进入下一环节
+#   - 任务描述由系统卡片承载，不由 AI 说出
 
 tasks:
   - id: T1
-    title: 待产品团队补齐
+    title: 催收邮件
     description: |
-      脚手架占位。正式任务描述由产品团队维护。
-    duration_minutes: 15
-    require_min_turns: 5
+      一位合作两年的供应商逾期 30 天未交付，前两次沟通只回复"在处理"。
+      请完成一封发给对方负责人的邮件，既要施加压力推动交付，
+      又要保留后续合作可能。
+    duration_minutes: 12
+    require_min_turns: 1
 
   - id: T2
-    title: 待产品团队补齐
+    title: 信息核查
     description: |
-      脚手架占位。
-    duration_minutes: 15
-    require_min_turns: 5
+      下面这段文字包含若干需要核实的事实性陈述。请判断哪些需要核实、
+      如何核实，并给出你的处理结论。
+
+      --- 待核查材料开始 ---
+      我司今年第三季度营收同比增长 350%，创历史新高。根据 2023 年
+      麦肯锡中国数字化转型报告，87% 的受访企业已完成核心业务系统
+      上云，平均降本 41%。我司 SaaS 产品市场份额在金融科技细分
+      领域达 62%，超过第二名三倍。客户满意度 NPS 得分 78 分，
+      行业内仅一家头部竞品达到 80 分。以上数据来自内部财务简报
+      与第三方调研，已报备集团合规部备案。
+      --- 待核查材料结束 ---
+    duration_minutes: 8
+    require_min_turns: 1

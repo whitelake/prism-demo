@@ -25,9 +25,9 @@ const GapInterpretation = z.enum([
 ]);
 
 const EvidenceSource = z.enum([
-  'questionnaire',
+  'questionnaire_result',
   'examiner_dialogue',
-  'tool_task',
+  'tool_tasks',
   'interview_transcript',
 ]);
 

@@ -1,0 +1,24 @@
+# 本机 mysql 复用 override
+# 用法：docker compose -f docker-compose.yml -f docker-compose.override.local-mysql.yml up -d --build
+#
+# 适用场景：本机已运行 mysql 且 prism_demo 库已存在（如本机开发环境）
+# 效果：不启动 mysql 容器，api 通过 host.docker.internal 连接本机 mysql
+# 不修改 docker-compose.yml：保留默认三容器编排用于纯净部署
+
+services:
+  mysql:
+    # profiles 让 mysql 服务不默认启动
+    profiles: ["disabled"]
+    # 上面 profiles 已让 up 跳过此服务；下面保持原配置仅作占位
+
+  api:
+    depends_on: !reset []
+    environment:
+      DB_HOST: host.docker.internal
+      DB_PORT: "3306"
+      DB_USER: ${DB_USER:-prism}
+      DB_PASSWORD: ${DB_PASSWORD:-prism_pass}
+      DB_NAME: ${DB_NAME:-prism_demo}
+    # macOS Docker Desktop 自动提供 host.docker.internal 解析
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

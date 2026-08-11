@@ -27,8 +27,13 @@
 ## R1 无原话引用不得下结论
 每个维度的评估，必须至少引用一段候选人原话作为证据。
 如果日志中找不到任何可引用的相关内容，该维度必须设为
-`insufficient_evidence: true`，`level: null`。
+`insufficient_evidence: true`，`level: null`，`evidence: []`。
 禁止基于"合理推测"给出等级。
+
+区分"无证据"与"低等级证据"：若日志中存在该维度相关行为但行为
+质量低（如提示词极简、迭代次数为 1、核验仅一次），不属"证据不足"，
+应给出 L0/L1 等低等级并引用对应原话；只有完全无相关行为时才标
+`insufficient_evidence: true`。
 
 ## R2 自述不构成证据
 候选人对自己能力的描述，**不能**作为该能力存在的证据。
@@ -196,6 +201,23 @@ R2 规定自述不能作为该能力**充分**证据——这是为了避免把"
 - `claim_reality_gap.level` 取值：`"无"|"轻微"|"重大"`
 - `claim_reality_gap.interpretation` 取值：
   `"无"|"倾向夸大"|"缺乏自我认知"|"紧张导致表现失真"|"难以判断"`
+
+  ⚠️ `level` 与 `interpretation` 是两个不同字段，不要混用：
+  - `level` 描述落差的"严重程度"：无 / 轻微 / 重大
+  - `interpretation` 描述落差的"性质"：倾向夸大 / 缺乏自我认知 / 紧张导致表现失真 / 难以判断
+
+  | 场景 | level | interpretation |
+  |---|---|---|
+  | 自述与实测一致 | 无 | 无 |
+  | 自述略高于实测 | 轻微 | 倾向夸大 |
+  | 自述远高于实测，明显夸大 | 重大 | 倾向夸大 |
+  | 自述很强但实测极弱，候选人无自我认知 | 重大 | 缺乏自我认知 |
+  | 候选人明显紧张导致实测失真 | 轻微 | 紧张导致表现失真 |
+  | 信息不足以判断是否存在落差 | 无 | 难以判断 |
+
+  注意：`"难以判断"` 只能填在 `interpretation` 字段，**不能**填在 `level` 字段。
+  如果信息不足，`level` 填 `"无"`（落差未证实），并在 `interpretation` 填 `"难以判断"`。
+
 - `overall.level` 取值：`"L0"|"L1"|"L2"|"L3_pending"|"L4_pending"|"L3"|"L4"`
   - 无面试记录时：只能输出 `"L0"` / `"L1"` / `"L2"` / `"L3_pending"` / `"L4_pending"`
   - 有面试记录时：可输出全部7个值（`"L3"` / `"L4"` 仅此时允许）
@@ -204,8 +226,25 @@ R2 规定自述不能作为该能力**充分**证据——这是为了避免把"
 - `overall.recommend_human_review`：置信度<0.6、落差为"重大"、存在红线、
   等级为 L3_pending/L4_pending、轨道为团队负责人 —— 任一成立即为 true
 - `judgment_change`：**有面试记录时必须为完整对象（不得为 null）**；无面试记录时固定为 null
-- `evidence[].source` 取值：`"questionnaire"|"examiner_dialogue"|"tool_task"|"interview_transcript"`
+- `evidence[].source` 取值：`"questionnaire_result"|"examiner_dialogue"|"tool_tasks"|"interview_transcript"`（与 full_log 字段名一致）
 - `evidence[].quote` 必须是日志中的**逐字原文**，不得改写、概括或拼接
+
+## 所有字段必填（不得省略）
+
+输出 JSON 时，**所有 schema 定义的字段都必须出现**，即使是空数组、空字符串或
+null 也不得省略。漏字段会导致 schema 校验失败、整次评估作废。
+
+- `dimensions[].evidence`：无证据时填 `[]`，不要省略
+- `anomaly_signals`：无异常信号时填 `[]`，不要省略
+- `red_lines`：无红线时填 `[]`，不要省略
+- `red_lines[].description`：每个红线对象必须含 `code` / `quote` / `description` 三字段，缺一不可
+- `overall.key_uncertainties`：必须为数组，无不确定性填 `[]`，不要省略
+- `overall.recommend_human_review`：必须为布尔值（true/false），不要省略
+- `overall.human_review_reason`：可为空字符串 `""`，但字段必须存在
+- `judgment_change`：无面试记录时为 `null`（不要省略）；有面试记录时必须为含
+  `changed` / `from_level` / `to_level` / `reason` / `key_new_evidence` 全部字段的对象
+
+**字段省略与字段填错一样，都属于不合规输出。**
 
 # 有面试记录时的额外要求
 

@@ -8,7 +8,13 @@ export interface PurposeParams {
   temperature: number;
   stream: boolean;
   max_tokens: number;
+  // R3（architecture.md 第10章）：输入 token 上限。null 表示不检查
+  max_input_tokens?: number | null;
   response_format?: 'json_object' | null;
+  // qwen3 系列默认开启 thinking 模式，会先生成思维链 token（不计入 max_tokens）
+  // false 可关闭 thinking，单次延迟从 30-70s 降到 2-5s
+  // examiner/tool 只需短问答或 JSON，关闭合理；eval/outline 需深思，保留默认
+  enable_thinking?: boolean;
 }
 
 export interface RetryConfig {
@@ -21,6 +27,7 @@ interface LlmParamsFile {
   baseline: {
     timeout_ms: number;
     max_tokens: number;
+    max_input_tokens: number | null;
     top_p: number;
     presence_penalty: number;
     frequency_penalty: number;

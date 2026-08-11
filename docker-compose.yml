@@ -1,10 +1,14 @@
+# prism-demo 本机部署编排（PoC）
+# 三容器：mysql + api + web
+# web 容器同时承担静态 serve 与边缘 nginx 反代（含 SSE buffering off）
+
 services:
   mysql:
     image: mysql:8.0
     container_name: prism-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: root_pass
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_pass}
       MYSQL_DATABASE: ${DB_NAME:-prism_demo}
       MYSQL_USER: ${DB_USER:-prism}
       MYSQL_PASSWORD: ${DB_PASSWORD:-prism_pass}
@@ -16,10 +20,62 @@ services:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root_pass}"]
       interval: 5s
       timeout: 3s
       retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: prism-api
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      # 容器间通信走服务名，不走 127.0.0.1
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_USER: ${DB_USER:-prism}
+      DB_PASSWORD: ${DB_PASSWORD:-prism_pass}
+      DB_NAME: ${DB_NAME:-prism_demo}
+      # PoC 阶段仍用 synchronize；上线后可改 'false' + 走 migration
+      DB_SYNCHRONIZE: ${DB_SYNCHRONIZE:-true}
+      DB_LOGGING: "false"
+      JWT_SECRET: ${JWT_SECRET:-replace-with-strong-secret}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-12h}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-replace-with-real-key}
+      DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      LLM_MODEL: ${LLM_MODEL:-qwen-plus}
+      ADMIN_KEY: ${ADMIN_KEY:-replace-with-strong-admin-key}
+      WEB_BASE_URL: ${WEB_BASE_URL:-http://localhost:5173}
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:3000}
+    expose:
+      - "3000"
+    # 不直接对外暴露 3000：由 web 容器统一反代
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3000/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: prism-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    # web 容器：nginx serve 静态 + 反代 /api 到 api:3000（含 SSE buffering off）
 
 volumes:
   mysql-data:

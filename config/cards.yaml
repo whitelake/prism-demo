@@ -3,18 +3,29 @@
 # 候选人端可见的系统卡片。Schema 详见 docs/api-spec.md。
 # 由产品团队维护。
 
+# TODO(product): 以下文案为工程侧基于 docs/api-spec.md §3.5/§3.6 示例起草的草稿，
+# 待产品团队评审确认。评审通过后请删除本 TODO 注释。
+
 cards:
+  # mode_switch：考官模式 → 工具模式切换提示
+  # 使用点：examiner.service.ts（S1.3 推进到 T1 时下发）
+  # 文案参考：docs/api-spec.md §3.6 line 423-425 示例
   mode_switch:
-    title: 进入工具模式
+    title: 考官对话已结束
     body: |
-      脚手架占位。正式文案待产品团队补齐。
+      以上就是考官交流的全部内容，你的回答都已记录在案，感谢你的配合。
 
+      接下来进入实操环节。这个对话框是一个普通的AI助手，它不会再向你提问，也不会评价你的操作。请像平时工作中使用AI一样使用它，完成下面的任务。
+
+  # task_done：T1 完成提示
+  # 使用点：tool.service.ts（T1→T2 切换时下发，title 取此处，body 由代码强制置空）
+  # 文案参考：docs/api-spec.md §3.7 line 543 示例
   task_done:
-    title: 任务完成
-    body: |
-      脚手架占位。正式文案待产品团队补齐。
+    title: 任务一已完成
+    body: ''
 
+  # notice：系统/异常提示（LLM 重试后的恢复说明、网络中断提示等）
+  # 当前未使用，保留接口供后续场景调用
   notice:
     title: 系统通知
-    body: |
-      脚手架占位。正式文案待产品团队补齐。
+    body: ''

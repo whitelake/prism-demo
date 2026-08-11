@@ -45,7 +45,7 @@ const FORBIDDEN_PHRASES = [
   '接下来我们进入',
 ];
 
-async function callExaminer(userContent: string) {
+async function callExaminer(userContent: string | string[]) {
   const moduleRef = await Test.createTestingModule({
     imports: [LlmModule],
   }).compile();
@@ -55,16 +55,25 @@ async function callExaminer(userContent: string) {
 
   const systemPrompt = interpolate(loadPrompt('examiner'), BASE_VARS);
 
+  // 单轮：直接拼接"候选人回答：xxx"
+  // 多轮：模拟连续 N 轮候选人回答，让模型识别为第 N 轮（满足 answer_vagueness 评估前提）
+  const userMessages = Array.isArray(userContent)
+    ? userContent.map((c, i) => ({
+        role: 'user' as const,
+        content: `候选人第${i + 1}轮回答：${c}`,
+      }))
+    : [
+        {
+          role: 'user' as const,
+          content: `候选人回答：${userContent}`,
+        },
+      ];
+
   const result = await client.call({
     assessmentId: 'test-examiner-' + Date.now(),
     purpose: 'examiner',
     systemPrompt,
-    userMessages: [
-      {
-        role: 'user',
-        content: `候选人回答：${userContent}`,
-      },
-    ],
+    userMessages,
     schema: ExaminerResponseSchema,
   });
 
@@ -123,7 +132,7 @@ describeIfReady('examiner prompt 联调 (e2e)', () => {
   });
 
   it('T6: 连续两次"想不起来了" → 换方向提问', async () => {
-    const { parsed } = await callExaminer('想不起来了');
+    const { parsed } = await callExaminer(['想不起来了', '想不起来了']);
     expect(parsed).toBeDefined();
     expect(parsed!.signals.answer_vagueness).toBeGreaterThan(0.3);
   });

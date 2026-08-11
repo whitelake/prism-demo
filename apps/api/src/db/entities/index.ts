@@ -1,1 +1,9 @@
 export { LlmCallLogEntity } from './llm-call-log.entity';
+export { InterviewerEntity } from './interviewer.entity';
+export { AssessmentEntity } from './assessment.entity';
+export { QuestionnaireResultEntity } from './questionnaire-result.entity';
+export { DialogueLogEntity } from './dialogue-log.entity';
+export { OutlineEntity } from './outline.entity';
+export { EvaluationEntity } from './evaluation.entity';
+export { InterviewerJudgmentEntity } from './interviewer-judgment.entity';
+export { ConsistencyEntity } from './consistency.entity';

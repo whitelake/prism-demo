@@ -2,6 +2,14 @@ import { Module, Global } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { LlmCallLogEntity } from './entities/llm-call-log.entity';
+import { InterviewerEntity } from './entities/interviewer.entity';
+import { AssessmentEntity } from './entities/assessment.entity';
+import { QuestionnaireResultEntity } from './entities/questionnaire-result.entity';
+import { DialogueLogEntity } from './entities/dialogue-log.entity';
+import { OutlineEntity } from './entities/outline.entity';
+import { EvaluationEntity } from './entities/evaluation.entity';
+import { InterviewerJudgmentEntity } from './entities/interviewer-judgment.entity';
+import { ConsistencyEntity } from './entities/consistency.entity';
 import { LlmCallLogPersister } from './llm-call-log.persister';
 
 @Global()
@@ -28,7 +36,17 @@ import { LlmCallLogPersister } from './llm-call-log.persister';
         logging: config.get<string>('DB_LOGGING', 'false') === 'true',
       }),
     }),
-    TypeOrmModule.forFeature([LlmCallLogEntity]),
+    TypeOrmModule.forFeature([
+      LlmCallLogEntity,
+      InterviewerEntity,
+      AssessmentEntity,
+      QuestionnaireResultEntity,
+      DialogueLogEntity,
+      OutlineEntity,
+      EvaluationEntity,
+      InterviewerJudgmentEntity,
+      ConsistencyEntity,
+    ]),
   ],
   providers: [
     LlmCallLogPersister,

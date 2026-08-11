@@ -170,10 +170,11 @@ describeIfReady('tool prompt 联调 (e2e)', () => {
     expect(raw).not.toMatch(/已经改了|改了.*版|第.*版|我们已经/);
   });
 
-  it('U10: 空输入或"？" → 简短回应"你需要我帮你做什么？"（唯一允许的反问）', async () => {
+  it('U10: 空输入或"？" → 简短反问需要做什么（唯一允许的反问）', async () => {
     const { raw } = await callTool([{ role: 'user', content: '？' }]);
     // U10 是 prompt 明确允许的唯一反问情形：模型应简短反问需要做什么
-    expect(raw).toMatch(/你需要|您需要|告诉我.*帮助|需要什么帮助|帮你做什么|帮你做什么/);
+    // 接受"你需要/您需要/为您提供帮助/帮你做什么/需要什么帮助"等同类反问
+    expect(raw).toMatch(/你需要|您需要|为您提供.*帮助|需要什么帮助|帮你做什么|需要我.*帮/);
     // 必须简短
     expect(raw.length).toBeLessThan(100);
     // 仍然不得提及测评类概念
