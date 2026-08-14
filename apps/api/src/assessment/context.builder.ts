@@ -133,7 +133,7 @@ function renderQuestionnaire(q: QuestionnaireResultEntity | null): string {
   if (!q) return '（问卷未提交）';
   return [
     `Q1: ${q.q1 ?? '（空）'}`,
-    `Q2: ${JSON.stringify(q.q2 ?? '（空）')}`,
+    `Q2: ${q.q2 ?? '（空）'}`,
     `Q3: ${q.q3 ?? '（空）'}`,
     `Q4: ${q.q4 ?? '（空）'}`,
     `Q5: ${q.q5 ?? '（空）'}`,

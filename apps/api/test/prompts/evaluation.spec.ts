@@ -11,11 +11,16 @@ import { SchemaValidationError } from '@/llm/json-parser';
 const API_KEY_CONFIGURED = isApiKeyConfigured();
 const describeIfReady = API_KEY_CONFIGURED ? describe : describe.skip;
 
-const LEVEL_DEFINITIONS = `L0: 未使用AI工具
-L1: 偶尔使用，仅完成单一任务，无核验意识
-L2: 规律使用，会提供基本背景，偶有核验行为
-L3: 系统化使用，多轮迭代，产出可复用资产，流程改造
-L4: 影响他人使用AI，组织级推动，方法论沉淀`;
+const LEVEL_DEFINITIONS = `L0: 未达入门
+L1: 入门
+L2: 进阶
+L3: 熟练
+L4: 专家`;
+
+const DIMENSION_DEFINITIONS = `D1: 使用强度与场景广度
+D2: 任务拆解与信息组织
+D3: 核验意识
+D4: 沉淀与外溢`;
 
 interface DialogueTurn {
   stage: string;
@@ -65,6 +70,7 @@ async function callEval(log: FullLog) {
   // 此测试只验证 prompt 输出 schema 与行为，不模拟状态机门控
   const systemPrompt = interpolate(loadPrompt('evaluation'), {
     level_definitions: LEVEL_DEFINITIONS,
+    dimension_definitions: DIMENSION_DEFINITIONS,
     full_log: log,
   });
 
@@ -298,12 +304,14 @@ describeIfReady('evaluation prompt 联调 (e2e)', () => {
     expect(['L0', 'L1']).toContain(d2!.level);
   });
 
-  it('E3: 完整L3级日志，无面试记录 → overall.level = "L3_pending" (R3)', async () => {
+  it('E3: 完整L3级日志，无面试记录 → overall.level = "L3" (v0.4：L3 可在阶段 A 直接确定)', async () => {
+    // v0.4：L3_pending 已废除。L3 的三个门槛中有两个（D2 拆解、D3 核验）
+    // 由 T1/T2 直接印证，可在阶段 A 直接确定输出 L3。
     const { parsed } = await evalWithRetry(E3_LOG);
     expect(parsed).toBeDefined();
     // eslint-disable-next-line no-console
     console.log('E3 overall.level:', parsed!.overall.level, 'confidence:', parsed!.overall.confidence);
-    expect(parsed!.overall.level).toBe('L3_pending');
+    expect(parsed!.overall.level).toBe('L3');
     expect(parsed!.judgment_change).toBeNull();
   });
 
@@ -393,18 +401,18 @@ describeIfReady('evaluation prompt 稳定性与格式完整性 (e2e)', () => {
     expect(max - min).toBeLessThanOrEqual(0.2);
   });
 
-  it('E11: 任意日志 × 5次 → dimensions 恰好6项 D1-D6 齐全', async () => {
+  it('E11: 任意日志 × 5次 → dimensions 恰好4项 D1-D4 齐全', async () => {
+    // v0.4：维度由 6 个合并为 4 个（D1 D2 D3 D4）
     // 模型偶尔输出截断/格式错误，evalWithRetry maxAttempts=3 容忍单次 JSON 解析失败
-    // 整体 E11 单测时长上限 1500s（jest.setTimeout 已设为 1800s）
     let lastErr: unknown;
     let successCount = 0;
     for (let i = 0; i < 5; i++) {
       try {
         const { parsed } = await evalWithRetry(E3_LOG, 3);
         expect(parsed).toBeDefined();
-        expect(parsed!.dimensions).toHaveLength(6);
+        expect(parsed!.dimensions).toHaveLength(4);
         const codes = parsed!.dimensions.map((d) => d.code).sort();
-        expect(codes).toEqual(['D1', 'D2', 'D3', 'D4', 'D5', 'D6']);
+        expect(codes).toEqual(['D1', 'D2', 'D3', 'D4']);
         lastErr = undefined;
         successCount += 1;
       } catch (e) {
@@ -419,9 +427,10 @@ describeIfReady('evaluation prompt 稳定性与格式完整性 (e2e)', () => {
 });
 
 describe('evaluation prompt 静态校验 (unit, no API call)', () => {
-  it('prompt 包含 level_definitions 和 full_log 变量占位符', () => {
+  it('prompt 包含 level_definitions / dimension_definitions / full_log 变量占位符', () => {
     const prompt = loadPrompt('evaluation');
     expect(prompt).toContain('{{level_definitions}}');
+    expect(prompt).toContain('{{dimension_definitions}}');
     expect(prompt).toContain('{{full_log}}');
   });
 
@@ -446,10 +455,18 @@ describe('evaluation prompt 静态校验 (unit, no API call)', () => {
     expect(prompt).toContain('R7');
   });
 
-  it('prompt 包含 L3_pending / L4_pending 取值约束', () => {
+  it('prompt 包含 L4_pending 取值约束（v0.4：唯一 pending 等级）', () => {
     const prompt = loadPrompt('evaluation');
-    expect(prompt).toContain('L3_pending');
     expect(prompt).toContain('L4_pending');
+    // v0.4：L3_pending 已废除。prompt 显式声明其不存在（R3.3），
+    // 但不得将其列为合法输出取值。
+    // 检查 R3 三条禁止中明确写出"不存在 L3_pending"
+    expect(prompt).toMatch(/不存在[^\n]*L3_pending/);
+    // 检查 R3 取值表中不把 L3_pending 列为合法值
+    const stageATableMatch = prompt.match(/阶段\s*A[^\n]*`overall\.level` 允许取值[\s\S]{0,400}/);
+    if (stageATableMatch) {
+      expect(stageATableMatch[0]).not.toMatch(/"L3_pending"/);
+    }
   });
 
   it('prompt 包含 RL1-RL4 红线代号', () => {
@@ -464,6 +481,7 @@ describe('evaluation prompt 静态校验 (unit, no API call)', () => {
     const prompt = loadPrompt('evaluation');
     const interpolated = interpolate(prompt, {
       level_definitions: LEVEL_DEFINITIONS,
+      dimension_definitions: DIMENSION_DEFINITIONS,
       full_log: { test: true },
     });
     expect(interpolated).not.toContain('{{');

@@ -98,7 +98,7 @@ describe('AssessmentService skip + getState (简化)', () => {
       createdAt: new Date(now), startedAt: new Date(now), submittedAt: null,
     });
     await questionnaireRepo.save({
-      assessmentId: id, q1: 'A', q2: JSON.stringify(['A']), q3: 'A', q4: 'A', q5: 'A',
+      assessmentId: id, q1: 'A', q2: 'A', q3: 'A', q4: 'A', q5: 'A',
       submittedAt: new Date(now),
     });
     return id;

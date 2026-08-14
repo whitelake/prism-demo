@@ -1,39 +1,334 @@
 # 问卷配置
 #
-# 5道选择题，由候选人在测评开始前作答。
-# Schema 详见 docs/prd.md。
+# 5 道选择题，候选人在测评开始前作答。
+#
+# ⚠ 定位（务必先读）
+#   本问卷【不参与定级】。按 evaluation.md R2，问卷答案属 E1 证据，
+#   不得作为任何维度 L2 及以上判定的依据，也不得单独触发任何红线。
+#
+#   它的三个产出：
+#     1. claimed_level  —— 供 claim_reality_gap 与 LC1 使用的自述锚点
+#     2. routing        —— 供考官模式决定追问重点
+#     3. consistency    —— 供异常信号（前后矛盾 / 细节崩塌）比对
+#
+# 维度与门槛命名与 dimensions.yaml / evaluation.md 保持一致：
+#   D1 使用强度与场景广度   D2 任务拆解与信息组织
+#   D3 核验意识             D4 沉淀与外溢
+#   门槛：d2_decomposition / d3_verification / d4_personal_asset / d4_spillover
+#
+# 维护约定：
+#   · YAML 中选项按档位【降序】书写（A 最高），便于维护与审阅
+#   · 前端渲染时必须【随机化选项顺序】，日志按 value 记录（见下方 presentation）
+#   · 修改任何 claim_level 必须同步跑 pnpm test:questionnaire
+#
 # 由产品团队维护。
 
+version: "0.1"
+
+presentation:
+  # 前端渲染要求
+  randomize_option_order: true      # 防止「一路选A」的满足式作答
+  show_progress: true
+  allow_skip: false                 # 五题全部必答，缺答无法计算锚点
+  # 严禁在任何位置向候选人展示档位、维度名或「哪个是好答案」的暗示
+  reveal_grading: false
+
 questions:
+
+  # ══════════════════════════════════════════════════════════════
+  # Q1 · D1 使用强度
+  # 不参与 claimed_level 计算（D1 不是任何等级的门槛）。
+  # 作用：路由 + 一致性检查。
+  # 设计意图：捕捉「是否已嵌入固定工作环节」，而非单纯次数。
+  #           C02 型候选人（高频但浅）会选 A，随后在考官模式暴露。
+  # ══════════════════════════════════════════════════════════════
   - id: Q1
-    text: 你近一个月使用AI工具的频率？
+    dimension: D1
+    facet: 使用强度
+    counts_toward_claim: false
+    participates_in_floor_gate: true
+    text: 最近一个月，你用AI工具处理工作任务的情况更接近哪种？
     options:
-      - { value: A, label: "几乎每天" }
-      - { value: B, label: "每周2-3次" }
-      - { value: C, label: "每周不到1次" }
-      - { value: D, label: "几乎不用" }
+      - value: A
+        label: "几乎每个工作日都用，已经是某几个固定工作环节的一部分"
+        routing_level: L3
+        probe: "是哪几个环节固定会用？最近一次是什么时候、什么任务？"
+      - value: B
+        label: "每周用好几次，遇到合适的任务会想到它"
+        routing_level: L2
+        probe: "最近一次是什么任务？当时为什么想到用它？"
+      - value: C
+        label: "每周不到一次，偶尔想起来才用"
+        routing_level: L1
+        probe: "能说一次具体用它做过的事吗？"
+      - value: D
+        label: "最近一个月基本没用过，或只是试过几次"
+        routing_level: L0
+        probe: "试过的那次是什么任务？后来为什么没继续用？"
 
+  # ══════════════════════════════════════════════════════════════
+  # Q2 · D1 场景广度
+  # 不参与 claimed_level 计算。
+  # 设计意图：用枚举法降低漏报（比直接问「用过几类」召回更准）。
+  #           第 ⑥ 项「检查/挑错」是刻意放入的 D3 前哨，
+  #           勾了这类的人在 Q4 应当选 A，不一致即为路由信号。
+  # ══════════════════════════════════════════════════════════════
   - id: Q2
-    text: 脚手架占位，正式题目待产品团队补齐
+    dimension: D1
+    facet: 场景广度
+    counts_toward_claim: false
+    participates_in_floor_gate: true
+    text: >-
+      以下六类任务——① 写或改文字材料　② 翻译　③ 整理、核对、转换表格数据
+      ④ 查资料或解释概念　⑤ 梳理思路、列框架、拆步骤　⑥ 检查材料、挑错
+      ——你最近一个月实际用AI做过几类？
     options:
-      - { value: A, label: "占位A" }
-      - { value: B, label: "占位B" }
-      - { value: C, label: "占位C" }
+      - value: A
+        label: "5 类以上"
+        routing_level: L3
+        probe: "挑其中两类，各说一个最近的具体任务。"
+      - value: B
+        label: "3 到 4 类"
+        routing_level: L2
+        probe: "是哪几类？其中最常做的那类，最近一次是什么任务？"
+      - value: C
+        label: "1 到 2 类"
+        routing_level: L1
+        probe: "这一类里最近一次具体做了什么？"
+      - value: D
+        label: "基本都没做过"
+        routing_level: L0
+        probe: "平时这些活是怎么处理的？有没有考虑过用AI？"
 
+  # ══════════════════════════════════════════════════════════════
+  # Q3 · D2 任务拆解与信息组织  →  门槛 d2_decomposition
+  # 设计意图：A 对应 D2 的 L3 档（结构化拆解 + 明确的不交给AI边界）。
+  #           C 是「探索式追加」，很常见、听起来也不差，但属无预先组织，
+  #           这是本题主要的诱导项。
+  #           本题的自述会被 T1 直接检验（见 C05：Q3 选 A 且 T1 确实拆解）。
+  # ══════════════════════════════════════════════════════════════
   - id: Q3
-    text: 脚手架占位
+    dimension: D2
+    gate: d2_decomposition
+    counts_toward_claim: true
+    text: 遇到一个稍微复杂的任务（比如写一份要发给客户的方案），你一般怎么跟AI配合？
     options:
-      - { value: A, label: "占位A" }
-      - { value: B, label: "占位B" }
+      - value: A
+        label: "先让它给框架或思路，我确认过方向再让它逐段展开；有些部分我会自己写，不交给它"
+        claim_level: L3
+        claims_gate: true
+        probe: "最近一次这样做是什么任务？哪部分你没交给它，为什么？"
+      - value: B
+        label: "一次把背景、目标、给谁看、格式要求都说清楚，拿到结果后针对具体问题让它改"
+        claim_level: L2
+        claims_gate: false
+        probe: "最近一次你让它改的是哪个具体问题？你当时怎么说的？"
+      - value: C
+        label: "先简单说个要求让它出一版，看到东西之后再慢慢补充和调整"
+        claim_level: L1
+        claims_gate: false
+        probe: "一般要来回几次？补充的时候通常补的是什么？"
+      - value: D
+        label: "直接说要什么，拿到结果自己改一改就用，很少来回跟它说"
+        claim_level: L1
+        claims_gate: false
+        probe: "自己改的时候主要改什么？有没有试过让它改？"
 
+  # ══════════════════════════════════════════════════════════════
+  # Q4 · D3 核验意识  →  门槛 d3_verification
+  # 设计意图：本套最关键的一题，也是社会赞许性偏差最强的一题。
+  #           B 是刻意设计的高吸引力弱选项——「让AI自己检查」听起来
+  #           比 C「通读一遍」更讲究，实则不构成独立核验（C05 反例）。
+  #           A 末尾「判断性内容不核对」用于削弱其完美感，降低盲选。
+  # ══════════════════════════════════════════════════════════════
   - id: Q4
-    text: 脚手架占位
+    dimension: D3
+    gate: d3_verification
+    counts_toward_claim: true
+    text: AI给你的内容里出现具体数字、名称或引述时，你实际会怎么处理？
     options:
-      - { value: A, label: "占位A" }
-      - { value: B, label: "占位B" }
+      - value: A
+        label: "分情况：数字、名称、引述这类会回到原始材料或来源核对；判断性的内容我自己判断，不核对"
+        claim_level: L3
+        claims_gate: true
+        probe: "最近一次核对时发现它错了，具体错在哪？你怎么发现的？"
+      - value: B
+        label: "让它说明来源，或让它自己再检查一遍，它说没问题我就用"
+        claim_level: L2
+        claims_gate: false
+        probe: "它说没问题之后，你还会自己再看什么吗？有没有出现过它说没问题但其实有问题？"
+      - value: C
+        label: "通读一遍，读起来通顺、逻辑没明显问题就用"
+        claim_level: L2
+        claims_gate: false
+        probe: "有没有遇到过读起来很顺但其实是错的？当时怎么发现的？"
+      - value: D
+        label: "一般直接用，重要的场合会多看一眼"
+        claim_level: L1
+        claims_gate: false
+        probe: "什么样的场合算重要？多看一眼具体看什么？"
 
+  # ══════════════════════════════════════════════════════════════
+  # Q5 · D4 沉淀与外溢  →  门槛 d4_personal_asset / d4_spillover
+  # 设计意图：唯一能声称 L4 的题。四个选项精确对应四种真实状态：
+  #             A 他人在用且有反馈    → C09 型（真外溢）
+  #             B 有资产、分享过但不知有人用 → C10 型（假外溢，L3）
+  #             C 隐性习惯、没存过    → C06 型（缺个人资产，L2）
+  #             D 无沉淀
+  #           A 的门槛里写入「提过修改意见」，把可核查细节前置到选项，
+  #           空口宣称外溢的人够不着。B 的措辞刻意写得体面，
+  #           让 C10 型候选人愿意如实选它而不是硬选 A。
+  # ══════════════════════════════════════════════════════════════
   - id: Q5
-    text: 脚手架占位
+    dimension: D4
+    gate: [d4_personal_asset, d4_spillover]
+    counts_toward_claim: true
+    text: 你有没有把用得顺手的问法或步骤固定下来？现在的情况是：
     options:
-      - { value: A, label: "占位A" }
-      - { value: B, label: "占位B" }
+      - value: A
+        label: "有固定下来的东西（存好的提示词、清单或模板），而且组里有别人在用，他们还提过修改意见或自己改过"
+        claim_level: L4
+        claims_gate: [d4_personal_asset, d4_spillover]
+        probe: "这个东西具体包含哪几项？谁在用、用多久了？他们改了什么？"
+      - value: B
+        label: "有固定下来的东西，主要我自己在用；也分享过，但不清楚有没有人真的在用"
+        claim_level: L3
+        claims_gate: [d4_personal_asset]
+        probe: "具体包含哪几项？第一版到现在改过哪里，为什么改？"
+      - value: C
+        label: "谈不上固定下来，但用久了自己有一套习惯的问法，没专门存过"
+        claim_level: L2
+        claims_gate: []
+        probe: "这套习惯具体是什么？是脑子里的还是每次现想？跟一开始比变了什么？"
+      - value: D
+        label: "没有，每次都是重新想怎么说"
+        claim_level: L1
+        claims_gate: []
+        probe: "每次重新想会不会觉得费劲？有想过固定下来吗？"
+
+# ══════════════════════════════════════════════════════════════════
+# claimed_level 推导规则
+#
+# 关键约束：必须与 evaluation.md 的定级程序采用【同一套合取逻辑】。
+# 若自述用「取最高档」而实测用「合取门槛」，则几乎每个候选人都会
+# 算出落差 —— 那是系统性假阳性，会让 claim_reality_gap 彻底失效。
+# ══════════════════════════════════════════════════════════════════
+derivation:
+  # 前置闸门：几乎不用工具时，后三题的自述不构成可信声明
+  floor_gate:
+    when: "Q1 == D and Q2 == D"
+    level: L0
+    rationale: >-
+      两题同时落到最低档，说明缺乏可被追问的使用基础。
+      此时 Q3/Q4/Q5 的高档作答属于「设想中的做法」而非「已发生的做法」，
+      不作为自述锚点。
+  claim_by_dimension:
+    D2: { source: Q3 }
+    D3: { source: Q4 }
+    D4: { source: Q5 }
+  # 自高向低，首个匹配即为结果
+  claimed_level_rules:
+    - level: L4
+      when: "D2 >= L3 and D3 >= L3 and D4 >= L4"
+    - level: L3
+      when: "D2 >= L3 and D3 >= L3 and D4 >= L3"
+    - level: L2
+      when: "D2 >= L2 and D3 >= L2 and D4 >= L2"
+    - level: L1
+      when: "otherwise"
+
+  # 落差档数 = claimed_level − actual_level（L4_pending 按 L4 计）
+  gap_thresholds:
+    - { diff: ">= 2", level: 重大 }
+    - { diff: "== 1", level: 轻微 }
+    - { diff: "<= 0", level: 无 }
+
+# ══════════════════════════════════════════════════════════════════
+# 路由规则 —— 输出给考官模式，决定追问重点
+# 排序即优先级，考官模式取前若干条作为必问项
+# ══════════════════════════════════════════════════════════════════
+routing_rules:
+
+  - id: R_SPILLOVER
+    priority: 1
+    when: "Q5 == A"
+    directive: >-
+      必须问到：这个东西具体包含哪几项；谁在用、从什么时候开始；
+      对方改过什么或反馈过什么。对方是否仍在使用必须问到。
+    rationale: 这是唯一通向最高档的路径，且「分享过」与「有人在用」的区别全靠此处问出
+
+  - id: R_VERIFY_CASE
+    priority: 1
+    when: "Q4 == A"
+    directive: >-
+      必须要到一次具体的纠错经历：错在哪、怎么发现的、后来怎么处理。
+      若答不出具体案例，继续换角度追问一次再放弃。
+    rationale: 声称回原表核对但举不出案例，是最高频的自述虚高形态
+
+  - id: R_AI_CHECKS_AI
+    priority: 2
+    when: "Q4 == B"
+    directive: >-
+      追问：它说没问题之后你自己还会看什么；有没有出现过它说没问题
+      但实际有问题的情况。
+    rationale: 区分「以AI核AI为唯一手段」与「以AI初筛后仍自行核对」
+
+  - id: R_HIGH_FREQ_SHALLOW
+    priority: 2
+    when: "Q1 in [A, B] and Q3 in [C, D]"
+    directive: >-
+      重点要一个完整的具体任务：当时怎么说的、来回了几次、每次改的是什么。
+      不要接受「什么都问它」这类概括回答。
+    rationale: 高频 + 无组织，最易被使用量误判为熟练
+
+  - id: R_LOW_FREQ_CONCRETE
+    priority: 2
+    when: "Q1 in [C, D]"
+    directive: >-
+      不要因频率低而缩短提问。目标是问出至少一次完整的具体使用经历，
+      含任务、做法、结果。
+    rationale: 低频但能说出具体案例与完全说不出，是两个不同档位（C01）
+
+  - id: R_IMPLICIT_HABIT
+    priority: 3
+    when: "Q5 == C"
+    directive: >-
+      追问这套习惯的具体形态：是存下来的文字、清单，还是每次现想；
+      跟最早比变了什么、为什么变。
+    rationale: 「有一套自己的方法」需要落到形态与一次迭代才成立（C06）
+
+  - id: R_CHECKING_TASK_MISMATCH
+    priority: 3
+    when: "Q2 in [A, B] and Q4 in [C, D]"
+    directive: 追问用AI做检查挑错时，具体怎么判断它挑出来的对不对。
+    rationale: 声称做检查类任务却无核验机制，内部不一致
+
+  - id: R_NO_ASSET_HIGH_METHOD
+    priority: 3
+    when: "Q3 == A and Q5 == D"
+    directive: 追问既然有固定做法，为什么没存下来；每次是怎么复现的。
+    rationale: 声称结构化拆解却无任何沉淀，需确认拆解是否真为稳定做法
+
+# ══════════════════════════════════════════════════════════════════
+# 一致性检查 —— 输出给评估模式作为异常信号候选，不直接影响定级
+# ══════════════════════════════════════════════════════════════════
+consistency_checks:
+  - id: X_FREQ_NO_CASE
+    when: "Q1 in [A, B] 且考官模式中未能取得任何一次具体使用经历"
+    signal: 细节崩塌
+    note: 概括层面高频，被追问时无具体任务
+
+  - id: X_VERIFY_NO_CASE
+    when: "Q4 == A 且全程举不出任何一次纠错经历"
+    signal: 细节崩塌
+    note: 自述可执行核验动作但无案例支撑
+
+  - id: X_SPILLOVER_NO_DETAIL
+    when: "Q5 == A 且说不出采纳者、时长或对方改动"
+    signal: 细节崩塌
+    note: 自述外溢但无可核查细节
+
+  - id: X_BREADTH_MISMATCH
+    when: "Q2 == A 但考官模式中只能说出 1 类任务"
+    signal: 前后矛盾
+    note: 场景广度自述与可举证范围不符

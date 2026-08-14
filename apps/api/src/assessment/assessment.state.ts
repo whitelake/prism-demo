@@ -204,7 +204,10 @@ export function shouldRunS13(input: S13TriggerInput): boolean {
 }
 
 export interface InterviewTriggerInput {
-  level: string; // A 的等级，例如 'L3_pending' / 'L4_pending' / 'L2' / 'L3' / 'L4'
+  // A 的等级（levels.yaml v0.4）
+  // 阶段 A 允许：L0 / L1 / L2 / L3 / L4_pending
+  // 阶段 C 允许：L0 / L1 / L2 / L3 / L4
+  level: string;
   track: string;
   confidence: number;
   claimRealityGapLevel?: '重大' | '一般' | null;
@@ -213,8 +216,11 @@ export interface InterviewTriggerInput {
 
 // PRD 4.5 面试官环节触发条件（满足任一即触发）
 // 模型返回的 recommend_human_review 仅作辅助提示，不参与触发决策
+//
+// v0.4 变更：L3_pending 已废除——L3 可在阶段 A 直接确定输出，不再触发面试。
+// 唯一触发面试的 pending 等级是 L4_pending（D4 外溢证据只能由现场追问补强）。
 export function shouldTriggerInterview(input: InterviewTriggerInput): boolean {
-  if (['L3_pending', 'L4_pending'].includes(input.level)) return true;
+  if (input.level === 'L4_pending') return true;
   if (input.track === '团队负责人轨道') return true;
   if (input.confidence < 0.6) return true;
   if (input.claimRealityGapLevel === '重大') return true;

@@ -57,14 +57,14 @@ export class CandidateController {
   @Get('questionnaire')
   async getQuestionnaire() {
     const questions = loadQuestionnaire();
+    // v0.1：所有题目均为单选（含 Q2 场景广度）
     return {
       questions: questions.map((q) => ({
         code: q.id,
-        type: q.id === 'Q2' ? 'multiple' : 'single',
+        type: 'single',
         title: q.text,
         options: q.options.map((o) => ({ value: o.value, label: o.label })),
         required: true,
-        ...(q.id === 'Q2' ? { minSelect: 1 } : {}),
       })),
     };
   }
@@ -76,12 +76,12 @@ export class CandidateController {
     @Body() body: QuestionnaireAnswersDto,
   ) {
     const assessmentId = getRequestAssessmentId(req);
-    // api-spec 3.4：请求体为 { answers: { Q1: ..., Q2: [...], ... } }
+    // api-spec 3.4：请求体为 { answers: { Q1: ..., Q2: 'A', ... } }
     // 内部 service 仍用 q1..q5 字段名（与 entity 对齐）
     const answers = (body?.answers ?? {}) as Record<string, unknown>;
     const result = await this.assessments.submitQuestionnaireLight(assessmentId, {
       q1: answers['Q1'] as string | undefined,
-      q2: answers['Q2'],
+      q2: answers['Q2'] as string | undefined,
       q3: answers['Q3'] as string | undefined,
       q4: answers['Q4'] as string | undefined,
       q5: answers['Q5'] as string | undefined,

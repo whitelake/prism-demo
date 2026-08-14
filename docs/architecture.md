@@ -500,8 +500,8 @@ function shouldTriggerInterview(assessmentId: string): boolean {
 
   const { overall, claimRealityGap, redLines } = evalA;
 
-  // 条件1：L3_pending / L4_pending
-  if (['L3_pending', 'L4_pending'].includes(overall.level)) return true;
+  // 条件1：L4_pending（v0.4：L3_pending 已废除，L3 可在阶段 A 直接确定输出）
+  if (overall.level === 'L4_pending') return true;
 
   // 条件2：团队负责人轨道
   if (overall.track === '团队负责人轨道') return true;
@@ -631,7 +631,7 @@ function parseJsonResponse<T>(raw: string, schema: ZodSchema<T>): T {
 | 场景 | 策略 |
 |------|------|
 | JSON 解析失败 | 重试1次（temperature 降0.1），仍失败则报错 |
-| Schema 校验失败（如 dimensions 不足6项） | 重试1次，仍失败则落库原始返回 + 标记 `eval_failed` |
+| Schema 校验失败（如 dimensions 不足4项） | 重试1次，仍失败则落库原始返回 + 标记 `eval_failed` |
 | 网络/超时 | 指数退避重试3次（1s/2s/4s） |
 
 **评估失败不能静默**：必须落库原始返回，面试官侧显示"评估失败"并提供"重新评估"按钮（PRD 4.7）。
@@ -643,12 +643,15 @@ function parseJsonResponse<T>(raw: string, schema: ZodSchema<T>): T {
 const BLACKLIST: RegExp[] = loadYaml('config/outline_blacklist.yaml').patterns
   .map((p: string) => new RegExp(p));
 
-// 默认配置示例（实际以文件为准）：
-//   - \bL[0-4](_pending)?\b           # 等级字符串，要求边界避免误伤
-//   - 初级|中级|高级
-//   - 优秀|出色|不足|薄弱|可疑|存疑|夸大|怀疑
-//   - 使用强度|任务拆解|核验意识|流程改造|影响力|组织推动
-//   - 等级|评分|置信度
+// 默认配置示例（实际以 config/outline_blacklist.yaml 为准）：
+//   - L[0-4]                                  # 等级编号（含 L4_pending 中的 L4 前缀）
+//   - 等级|评分|置信度|待验证                  # 评估术语
+//   - 初级|中级|高级|入门|进阶|熟练|专家       # 档位中文名（含 levels.yaml v0.4 档位名）
+//   - 优秀|出色|不足|薄弱|可疑|存疑|夸大|值得怀疑|落差
+//   - 使用强度|场景广度|任务拆解|信息组织|核验意识|沉淀|外溢|影响力
+//                                            # 当前 4 维度名 + 旧维度名"影响力"
+//   - 个人深度轨道|团队负责人轨道              # 轨道名
+//   - 流程改造|组织推动                        # 旧维度名仍禁止，避免用旧术语绕过
 
 async function generateOutline(assessmentId): Promise<Outline> {
   for (let i = 0; i < 3; i++) {
@@ -794,7 +797,7 @@ CREATE TABLE evaluation (
   assessment_id VARCHAR(36) NOT NULL,
   type          CHAR(1) NOT NULL,          -- A | C
   result_json   JSON NOT NULL,
-  level         VARCHAR(15) NOT NULL,      -- L2 | L3_pending | ...
+  level         VARCHAR(15) NOT NULL,      -- L2 | L4_pending | L4 | ...（v0.4：仅 L4_pending）
   track         VARCHAR(20) NOT NULL,
   confidence    DECIMAL(3,2) NOT NULL,
   recommend_human_review BOOLEAN NOT NULL,
@@ -828,14 +831,15 @@ CREATE TABLE consistency (
   max_level_gap INT,
   computed_at   DATETIME
 );
--- max_level_gap 计算规则：
+-- max_level_gap 计算规则（levels v0.4）：
 -- 1. 把 level 归一化为数值：L0=0, L1=1, L2=2, L3=3, L4=4；
---    L3_pending=3, L4_pending=4（pending 视为对应等级参与比较，
---    "是否 pending"由 separate 字段或前缀判断，不进入 gap 计算）
+--    L4_pending=4（pending 视为对应等级参与比较，
+--    "是否 pending"由前缀判断，不进入 gap 计算）
 -- 2. max_level_gap = max(|a-b|, |b-c|, |a-c|) 的等级差绝对值
 -- 3. a_eq_b / b_eq_c / a_eq_c 仅在数值相等时为 true，
---    pending 与确定等级视为相等（例如 A=L3_pending, C=L3 → a_eq_c=true, gap=0）
+--    pending 与确定等级视为相等（例如 A=L4_pending, C=L4 → a_eq_c=true, gap=0）
 -- 4. B 的 level 字段不含 pending（面试官直接给确定等级），无需归一化特殊处理
+-- v0.4 变更：L3_pending 已废除——L3 可在阶段 A 直接确定输出，不再 pending
 ```
 
 ## 5.2 两个设计说明

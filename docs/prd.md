@@ -401,9 +401,13 @@
 |------|---------|---------|
 | **L0** | 基本不使用AI，或使用但完全无法描述过程；对AI持排斥或盲目态度 | 无有效使用案例 |
 | **L1** | 单轮问答式使用，把AI当搜索引擎；提示词简单无背景；几乎不迭代；无核验行为 | 有使用案例，但迭代≤1轮且无核验证据 |
-| **L2** | 能拆解任务、提供背景；多轮有效迭代；有具体的核验案例（即使是被动触发） | 拆解证据 + 有效迭代 + 至少1个具体核验案例 |
-| **L3** | 将AI嵌入工作流程，产生了可复用资产（模板/流程/工具）；有他人采纳的证据 | L2全部 + 流程级改造的具体形态 + 至少1个他人采纳案例，**且经现场验证** |
-| **L4** | 组织级影响：主动推动他人/团队使用，有方法论沉淀，能评估他人的AI应用水平 | L3全部 + 组织级推动证据 + 方法论表述，**且经现场验证** |
+| **L2 进阶** | 能拆解任务、提供背景；多轮有效迭代；有具体的核验案例（即使是被动触发） | 拆解证据 + 有效迭代 + 至少1个具体核验案例 |
+| **L3** | 将AI嵌入工作流程，产生了可复用资产（模板/流程/工具）；有他人采纳的证据 | L2全部 + D4 档位达到 L3（个人复用物 + 说得出形态与一次迭代） |
+| **L4** | 组织级影响：主动推动他人/团队使用，有方法论沉淀，能评估他人的AI应用水平 | L3全部 + D4 档位达到 L4（外溢事实成立，含可核查细节），**且经现场验证** |
+
+> **v0.4 变更**：L2 更名「进阶」（原"入门到熟练之间"）。L3/L4 门槛改为引用
+> D4「沉淀与外溢」档位——L3 看个人复用物，L4 看外溢事实。原"流程改造/
+> 影响力/组织推动"三维度已合并入 D4，详见 `config/dimensions.yaml`。
 
 ### 轨道判定
 
@@ -419,7 +423,7 @@
 
 | 规则 | 内容 |
 |------|------|
-| R1 | **L3及以上必须有现场验证**。仅凭候选人环节，大模型最高只能输出"L3（待验证）"，不能输出确定的L3/L4 |
+| R1 | **L4 必须由现场追问补强**。L4 的唯一门槛在 D4 外溢，而 D4 证据永远只有候选人自述这一个来源。阶段 A 判到 L4 一律输出 `L4_pending`，阶段 C 才能输出确定的 `L4`。L0–L3 可在阶段 A 直接确定输出 |
 | R2 | **无原话证据不得下结论**。任一维度若无法引用候选人原话，该维度必须标记为"证据不足" |
 | R3 | **自述不构成证据**。"我经常核验"不算核验证据，必须有具体案例（时间/对象/发现了什么/怎么处理） |
 | R4 | **落差优先**。若自述水平明显高于实测表现，等级按实测表现判定，并单独标记落差 |
@@ -431,7 +435,7 @@
 
 | # | 条件 | 理由 |
 |---|------|------|
-| 1 | 大模型初判为 L3（待验证）或 L4（待验证） | 高阶必须验证（R1） |
+| 1 | 大模型初判为 `L4_pending` | L4 的外溢证据只能由现场追问补强（R1） |
 | 2 | 轨道判定为"团队负责人轨道" | 管理类能力必须现场验证 |
 | 3 | 置信度 < 0.6 | 大模型自认判不准（R5） |
 | 4 | 自述实测落差标记为"重大" | 需人工识别是夸大还是紧张 |
@@ -661,15 +665,18 @@ AI使用行为信息。
 你是AI素质测评的评估专家。基于候选人的完整测评日志，输出结构化评估。
 
 【等级定义】
-{{level_definitions}}   // 4.4节表格全文注入
+{{level_definitions}}   // config/levels.yaml 渲染注入
+
+【维度定义】
+{{dimension_definitions}}   // config/dimensions.yaml 渲染注入
 
 【硬规则】
 1. 任何结论必须附带候选人原话引用作为证据。无法引用原话的维度，必须
    标记为"证据不足"，不得推测
 2. 自述不构成证据。"我经常核验"不算，必须有具体案例（时间/对象/发现
    了什么/如何处理）
-3. 若无面试记录（interview_transcript 为 null），L3/L4 只能输出为
-   "L3_pending" / "L4_pending"，不得输出确定的 L3/L4
+3. 阶段 A（interview_transcript 为 null）允许输出 L0/L1/L2/L3/L4_pending；
+   阶段 C 允许输出 L0/L1/L2/L3/L4。L3 可在阶段 A 直接确定输出。
 4. 若候选人自述水平明显高于实测表现，等级按实测判定，并在
    claim_reality_gap 中说明
 5. 置信度必须诚实反映证据充分度。证据薄弱时给低置信度，不要为了给出
@@ -683,11 +690,9 @@ AI使用行为信息。
 
 【评估维度】
 D1 使用强度与场景广度
-D2 任务拆解与信息供给（提示词质量）
-D3 迭代与协作深度
-D4 核验意识与批判性
-D5 流程改造与资产化
-D6 影响力与组织推动
+D2 任务拆解与信息组织
+D3 核验意识
+D4 沉淀与外溢
 
 【输出格式】
 严格输出JSON，schema如下：
@@ -697,11 +702,18 @@ D6 影响力与组织推动
 
 ```json
 {
+  "meta": {
+    "evaluation_stage": "A",
+    "levels_version": "0.4",
+    "dimensions_version": "0.1"
+  },
   "dimensions": [
     {
-      "code": "D4",
-      "name": "核验意识与批判性",
+      "code": "D3",
+      "name": "核验意识",
       "level": "L2",
+      "evidence_grade": "E2",
+      "evidence_source": null,
       "reasoning": "能主动发现数字异常并追溯到原始报告，但仅在被问到才提及，未形成机制",
       "evidence": [
         { "source": "examiner_dialogue", "location": "S1.2 turn 3", "quote": "它给我一个行业渗透率的数字，我觉得偏高，去查了原始报告", "note": "具体案例，有触发点和处理动作" }
@@ -710,11 +722,22 @@ D6 影响力与组织推动
       "insufficient_evidence": false
     }
   ],
+  "gate_checks": {
+    "l3_gates": {
+      "d2_decomposition": true,
+      "d3_verification": false,
+      "d4_personal_asset": true,
+      "task_corroboration": true
+    },
+    "l4_gate": { "d4_spillover": false, "spillover_form": null },
+    "notes": ["d3_verification 不成立：能说出会检查，但举不出任何一次具体的纠错经历"]
+  },
   "claim_reality_gap": {
     "level": "无 / 轻微 / 重大",
     "description": "候选人自述每天多次使用，实操中仅1轮交互即结束",
     "interpretation": "倾向夸大 / 缺乏自我认知 / 紧张导致表现失真 / 无"
   },
+  "level_caps": [],
   "anomaly_signals": [
     { "type": "响应时间异常", "evidence": "T1 turn 1，提示词380字，response_interval_sec=18", "description": "输入速度与内容长度不匹配" }
   ],
@@ -722,17 +745,23 @@ D6 影响力与组织推动
     { "code": "RL2", "quote": "...", "description": "..." }
   ],
   "overall": {
-    "level": "L3_pending",
+    "level": "L4_pending",
     "track": "个人深度轨道",
     "confidence": 0.68,
     "reasoning": "综合判断理由，200字以内",
     "key_uncertainties": [
-      "流程改造的具体形态仅有自述，未见细节",
-      "他人采纳的性质（主动/被动）不明"
+      "候选人提到的核对清单，目前有哪些人在用、用在什么场景",
+      "该做法从第一版到现在改过哪些地方，为什么改"
+    ],
+    "verification_targets": [
+      "候选人提到的核对清单，目前有哪些人在用、用在什么场景",
+      "该做法从第一版到现在改过哪些地方，为什么改",
+      "最近一次发现 AI 给出错误信息的具体情况"
     ],
     "recommend_human_review": true,
-    "human_review_reason": "L3_pending 需现场验证"
-  }
+    "human_review_reason": "L4_pending 需现场验证外溢事实"
+  },
+  "judgment_change": null
 }
 ```
 
@@ -951,7 +980,7 @@ D6 影响力与组织推动
 | 区块 | 内容 |
 |------|------|
 | 结论区 | 大模型判定等级、轨道、置信度、判断理由 |
-| 维度证据区 | 6个维度，每个展示等级 + 原话引用 + 证据说明；"证据不足"的维度明确标出 |
+| 维度证据区 | 4个维度（D1–D4），每个展示等级 + 原话引用 + 证据说明；"证据不足"的维度明确标出 |
 | 落差与异常区 | claim_reality_gap、anomaly_signals、red_lines |
 | 原始日志区 | 折叠展开：选择题结果、考官模式完整对话（按阶段分组）、工具模式完整记录（含轮次与耗时） |
 
@@ -1106,7 +1135,7 @@ D6 影响力与组织推动
 | `llm_call_log` | assessment_id, purpose(examiner/tool/eval/outline), request_prompt, response_raw, tokens, latency, ts |
 | `evaluation` | assessment_id, type(A/C), result_json, level, track, confidence, created_at |
 | `interviewer_judgment` | assessment_id, level, track, reason, transcript（提交B时转正锁定）, transcript_draft（草稿）, submitted_at |
-| `consistency` | assessment_id, level_a, level_b, level_c, a_eq_b, b_eq_c, a_eq_c, max_level_gap（L3_pending=L3，gap 按数值计算）, computed_at |
+| `consistency` | assessment_id, level_a, level_b, level_c, a_eq_b, b_eq_c, a_eq_c, max_level_gap（L4_pending=L4，gap 按数值计算）, computed_at |
 
 ## 附录B 需要产品团队在开发启动前交付的配置内容
 

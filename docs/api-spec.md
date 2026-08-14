@@ -96,15 +96,31 @@ type DialogueMode = 'examiner' | 'tool';
 type StageCode = 'S1.1' | 'S1.2' | 'S1.3';
 type TaskCode  = 'T1' | 'T2';
 
-/** 等级 */
+/** 等级（levels v0.4：唯一 pending 是 L4_pending；L3 可在阶段 A 直接确定） */
 type Level          = 'L0' | 'L1' | 'L2' | 'L3' | 'L4';
-type EvaluationLevel = Level | 'L3_pending' | 'L4_pending';
+type EvaluationLevel = Level | 'L4_pending';
 
-/** 轨道 */
-type Track = '个人深度轨道' | '团队负责人轨道' | '无法判断';
+/** 轨道（L4/L4_pending 时为前三者之一；其他等级固定"无"） */
+type Track = '个人深度轨道' | '团队负责人轨道' | '无法判断' | '无';
 
-/** 维度代号 */
-type DimensionCode = 'D1' | 'D2' | 'D3' | 'D4' | 'D5' | 'D6';
+/** 维度代号（dimensions v0.1：固定 4 项，顺序 D1 D2 D3 D4） */
+type DimensionCode = 'D1' | 'D2' | 'D3' | 'D4';
+
+/** 维度级证据等级 */
+type EvidenceGrade = 'E0' | 'E1' | 'E2' | 'E3';
+
+/** E3 证据的印证来源类型；仅 evidence_grade = E3 时非 null */
+type DimensionEvidenceSource = 'task' | 'interview';
+
+/** 单条原文引用出自日志的哪个部分 */
+type EvidenceLocation =
+  | 'questionnaire_result'
+  | 'examiner_dialogue'
+  | 'tool_tasks'
+  | 'interview_transcript';
+
+/** 定级红线代号（等级上限） */
+type LevelCapCode = 'LC1' | 'LC2' | 'LC3' | 'LC4' | 'LC5';
 
 /** 安全红线代号（PRD 4.6） */
 type RedLineCode = 'RL1' | 'RL2' | 'RL3' | 'RL4';
@@ -917,6 +933,8 @@ GET /api/v1/assessments/{id}/report
         "code": "D1",
         "name": "使用强度与场景广度",
         "level": "L2",
+        "evidenceGrade": "E2",
+        "evidenceSource": null,
         "insufficientEvidence": false,
         "confidence": 0.85,
         "reasoning": "有今日具体案例，覆盖文案与数据两类任务",
@@ -930,11 +948,22 @@ GET /api/v1/assessments/{id}/report
         ]
       }
     ],
+    "gateChecks": {
+      "l3Gates": {
+        "d2Decomposition": true,
+        "d3Verification": false,
+        "d4PersonalAsset": true,
+        "taskCorroboration": true
+      },
+      "l4Gate": { "d4Spillover": false, "spilloverForm": null },
+      "notes": ["d3_verification 不成立：能说出会检查，但举不出任何一次具体的纠错经历"]
+    },
     "claimRealityGap": {
       "level": "轻微",
       "description": "问卷自述会主动提供背景，但T1首轮提示词仅一句话",
       "interpretation": "缺乏自我认知"
     },
+    "levelCaps": [],
     "anomalySignals": [
       {
         "type": "响应时间异常",
@@ -944,18 +973,24 @@ GET /api/v1/assessments/{id}/report
     ],
     "redLines": [],
     "overall": {
-      "level": "L3_pending",
+      "level": "L4_pending",
       "track": "个人深度轨道",
       "confidence": 0.72,
       "reasoning": "具备L2全部证据，且描述了流程级改造与他人采纳...",
       "keyUncertainties": ["模板的具体形态未说明", "他人采纳是主动还是被动未确认"],
+      "verificationTargets": [
+        "模板的具体形态未说明",
+        "他人采纳是主动还是被动未确认",
+        "最近一次发现 AI 给出错误信息的具体情况"
+      ],
       "recommendHumanReview": true,
-      "humanReviewReason": "L3_pending 需现场验证"
-    }
+      "humanReviewReason": "L4_pending 需现场验证外溢事实"
+    },
+    "judgmentChange": null
   },
 
   "judgmentB": {
-    "level": "L3",
+    "level": "L4",
     "track": "个人深度轨道",
     "reason": "现场追问后能说出模板的7个字段和两次具体修改",
     "submittedAt": "2025-03-14T15:10:00.000+08:00",
@@ -970,24 +1005,24 @@ GET /api/v1/assessments/{id}/report
     "anomalySignals": [],
     "redLines": [],
     "overall": {
-      "level": "L3",
+      "level": "L4",
       "track": "个人深度轨道",
       "confidence": 0.88,
       "...": "..."
     },
     "judgmentChange": {
       "changed": true,
-      "fromLevel": "L3_pending",
-      "toLevel": "L3",
+      "fromLevel": "L4_pending",
+      "toLevel": "L4",
       "reason": "面试记录中候选人当场描述了模板的字段结构，并说明了两次具体迭代内容，自述得到验证",
       "keyNewEvidence": ["模板里有7个字段，其中'数据口径'那一列是第二版才加的"]
     }
   },
 
   "consistency": {
-    "levelA": "L3_pending",
-    "levelB": "L3",
-    "levelC": "L3",
+    "levelA": "L4_pending",
+    "levelB": "L4",
+    "levelC": "L4",
     "aEqB": true,
     "bEqC": true,
     "aEqC": true,
@@ -1014,7 +1049,7 @@ GET /api/v1/assessments/{id}/report
   "evaluationA": null,
   "failureInfo": {
     "stage": "evaluation_a",
-    "reason": "模型返回JSON格式校验失败（dimensions 仅5项）",
+    "reason": "模型返回JSON格式校验失败（dimensions 仅3项）",
     "occurredAt": "2025-03-14T14:22:00.000+08:00",
     "canRetry": true
   }
@@ -1027,9 +1062,11 @@ GET /api/v1/assessments/{id}/report
 
 ### ★ 一致性对比说明
 
-`aEqB` 的比较规则：**`L3_pending` 与 `L3` 视为相等**（`L4_pending` 与 `L4` 同理）。`_pending` 只是"待验证"标记，不代表等级不同。这一规则由后端实现，前端直接使用布尔值。
+`aEqB` 的比较规则（levels v0.4）：**`L4_pending` 与 `L4` 视为相等**。`_pending` 只是"待验证"标记，不代表等级不同。这一规则由后端实现，前端直接使用布尔值。
 
 `maxLevelGap` = 三者中最大等级差的绝对值（按 L0=0…L4=4 计算，`_pending` 去后缀）。
+
+> **v0.4 变更**：`L3_pending` 已废除——L3 可在阶段 A 直接确定输出，不再触发面试。唯一的 pending 等级是 `L4_pending`。
 
 ---
 

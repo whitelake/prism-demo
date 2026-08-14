@@ -408,21 +408,24 @@ describe('assessment.state 状态机不变量 (PoC 不变量 5)', () => {
     });
   });
 
-  describe('shouldTriggerInterview (PRD 4.5)', () => {
+  describe('shouldTriggerInterview (PRD 4.5 / levels v0.4)', () => {
     const base: InterviewTriggerInput = {
       level: 'L2',
-      track: '个人贡献者轨道',
+      track: '个人深度轨道',
       confidence: 0.8,
       claimRealityGapLevel: null,
       redLinesCount: 0,
     };
 
-    it('条件1：level=L3_pending → 触发', () => {
-      expect(shouldTriggerInterview({ ...base, level: 'L3_pending' })).toBe(true);
-    });
-
     it('条件1：level=L4_pending → 触发', () => {
       expect(shouldTriggerInterview({ ...base, level: 'L4_pending' })).toBe(true);
+    });
+
+    it('v0.4：L3 不再触发面试（L3_pending 已废除，L3 可在阶段 A 直接确定）', () => {
+      // L3 + 个人深度轨道 + 高置信 + 无落差 + 无红线 → 不触发
+      expect(
+        shouldTriggerInterview({ ...base, level: 'L3', track: '无' }),
+      ).toBe(false);
     });
 
     it('条件2：track=团队负责人轨道 → 触发', () => {
@@ -451,12 +454,6 @@ describe('assessment.state 状态机不变量 (PoC 不变量 5)', () => {
 
     it('不触发：L2 + confidence ≥ 0.6 + 无落差 + 无红线', () => {
       expect(shouldTriggerInterview(base)).toBe(false);
-    });
-
-    it('不触发：L3（确定等级，非 pending） + confidence 高 + 无其他条件', () => {
-      expect(
-        shouldTriggerInterview({ ...base, level: 'L3' }),
-      ).toBe(false);
     });
   });
 

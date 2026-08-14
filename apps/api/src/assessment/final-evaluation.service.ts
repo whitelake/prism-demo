@@ -13,6 +13,7 @@ import { loadPrompt } from '@/llm/prompt-loader';
 import { interpolate } from '@/llm/interpolator';
 import { EvaluationResponseSchema, type EvaluationResponse } from '@/llm/schemas/evaluation.schema';
 import { renderLevelDefinitions } from './levels.config';
+import { renderDimensionDefinitions } from './dimensions.config';
 import { computeConsistency, type ConsistencyInput } from './consistency';
 import {
   AssessmentStatus,
@@ -20,6 +21,7 @@ import {
 } from './assessment.state';
 import { InputTooLongError } from '@/llm/input-too-long.error';
 import { truncateFullLog, type FullLog, type FullLogDialogueTurn, type FullLogToolTurn, type FullLogToolTask } from './full-log-truncator';
+import { assertEvaluationStageRules } from './evaluation-assertions';
 
 // 终判C：提交B 后异步触发（架构 4.3 / PRD 4.5 / 988-1000）
 //
@@ -85,6 +87,7 @@ export class FinalEvaluationService {
     try {
       const systemPrompt = interpolate(loadPrompt('evaluation'), {
         level_definitions: renderLevelDefinitions(),
+        dimension_definitions: renderDimensionDefinitions(),
         full_log: fullLog,
       });
 
@@ -98,6 +101,8 @@ export class FinalEvaluationService {
         schema: EvaluationResponseSchema,
       });
       evalResponse = result.parsed as EvaluationResponse;
+      // R3 三条禁止：阶段 C 禁止输出 L4_pending；仅 L4_pending 合法
+      assertEvaluationStageRules(evalResponse);
     } catch (e) {
       // R3：输入超长时按优先级截断后重试一次
       if (e instanceof InputTooLongError) {
@@ -110,6 +115,7 @@ export class FinalEvaluationService {
           try {
             const systemPrompt = interpolate(loadPrompt('evaluation'), {
               level_definitions: renderLevelDefinitions(),
+              dimension_definitions: renderDimensionDefinitions(),
               full_log: fullLog,
             });
             const result = await this.llmClient.call({
@@ -122,6 +128,7 @@ export class FinalEvaluationService {
               schema: EvaluationResponseSchema,
             });
             evalResponse = result.parsed as EvaluationResponse;
+            assertEvaluationStageRules(evalResponse);
             return await this.finalizeSuccess(assessment, evalResponse);
           } catch (e2) {
             this.logger.warn(
@@ -231,7 +238,7 @@ export class FinalEvaluationService {
       questionnaire: questionnaire
         ? {
             Q1: questionnaire.q1,
-            Q2: questionnaire.q2 as string[] | null,
+            Q2: questionnaire.q2,
             Q3: questionnaire.q3,
             Q4: questionnaire.q4,
             Q5: questionnaire.q5,

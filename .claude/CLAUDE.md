@@ -56,6 +56,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 这四个文件是 PoC 成败的关键实现点，详见 `docs/architecture.md` 第4章。不要通过削弱测试断言来绕过约束。
 
+## 维度与等级体系
+
+维度与等级的唯一来源是 yaml 配置，不要在代码或文档里硬编码档位文案：
+
+- `config/dimensions.yaml`：4 个维度（D1 使用强度与场景广度 / D2 任务拆解与信息组织 / D3 核验意识 / D4 沉淀与外溢）。D4 由原流程改造/影响力/组织推动合并而来，旧维度名在 prompt 黑名单中仍禁止使用。
+- `config/levels.yaml`：等级 L0 未达入门 / L1 入门 / L2 进阶 / L3 熟练 / L4 专家，以及唯一 pending 等级 L4_pending。
+- v0.4 关键变更：L3_pending 已废除，L3 可在阶段 A 直接确定；L4 必须由现场追问补强，恒为 L4_pending，待面试后才能在阶段 C 升至 L4。一致性对比中 L4_pending ≡ L4。
+- 代码层：`packages/shared/src/levels.ts` 的 `LEVELS` / `PENDING_LEVELS` / `EVALUATION_LEVELS` / `DIMENSION_CODES` / `TRACKS` / `EVIDENCE_GRADES` / `EVALUATION_A_LEVELS` 常量、`packages/shared/src/api-types.ts` 的类型别名（基于上述常量推导）、`apps/api/src/assessment/dimensions.config.ts` 的 `renderDimensionDefinitions()`、`apps/api/src/assessment/consistency.ts` 的 `levelValue` 必须与 yaml 保持一致。
+
+Prompt 与代码 Schema 不一致时报告问题，不要静默兼容。
+
+### outline 输出黑名单词表
+
+题纲（outline）生成结果的 `ask` / `verify` / `follow_up` / `note` 字段不得命中以下正则（`quote` 字段为候选人原话，豁免校验）。完整实现见 `config/outline_blacklist.yaml` 与 `config/prompts/outline.md`：
+
+| 类别 | 正则 |
+|---|---|
+| 等级编号 | `L[0-4]` |
+| 评估术语 | `等级\|评分\|置信度\|待验证` |
+| 档位中文名 | `初级\|中级\|高级\|入门\|进阶\|熟练\|专家` |
+| 评价词 | `优秀\|出色\|不足\|薄弱\|可疑\|存疑\|夸大\|值得怀疑\|落差` |
+| 维度名 | `使用强度\|场景广度\|任务拆解\|信息组织\|核验意识\|沉淀\|外溢\|影响力\|流程改造\|组织推动` |
+| 轨道名 | `个人深度轨道\|团队负责人轨道` |
+
 ## 文档入口
 
 - `docs/prd.md`：业务行为、实验规则、等级定义、验收标准

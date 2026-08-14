@@ -30,7 +30,7 @@ import type { ExaminerResponse } from '@/llm/schemas/examiner.schema';
 
 const VALID_ANSWERS = {
   q1: 'A',
-  q2: ['A'],
+  q2: 'A',
   q3: 'A',
   q4: 'A',
   q5: 'A',

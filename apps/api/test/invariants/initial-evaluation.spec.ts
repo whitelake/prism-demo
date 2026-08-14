@@ -24,28 +24,57 @@ import { OutlineService } from '@/assessment/outline.service';
 // 不变量 5：状态机推进由 shouldTriggerInterview 决策
 
 interface MinimalEvalResponse {
-  dimensions: Array<{ code: string; name: string; level: string | null; insufficient_evidence: boolean; evidence: Array<{ source: string; location: string; quote: string; note: string }>; confidence: number; reasoning: string }>;
+  meta: { evaluation_stage: 'A' | 'C'; levels_version: string; dimensions_version: string };
+  dimensions: Array<{ code: string; name: string; level: string | null; evidence_grade: string; evidence_source: string | null; insufficient_evidence: boolean; evidence: Array<{ source: string; location: string; quote: string; note: string }>; confidence: number; reasoning: string }>;
+  gate_checks: { l3_gates: { d2_decomposition: boolean; d3_verification: boolean; d4_personal_asset: boolean; task_corroboration: boolean }; l4_gate: { d4_spillover: boolean; spillover_form: string | null }; notes: string[] };
   claim_reality_gap: { level: string; description: string; interpretation: string };
+  level_caps: Array<{ code: string; cap_level: string; quote: string; description: string }>;
   anomaly_signals: Array<{ type: string; evidence: string; description: string }>;
   red_lines: Array<{ code: string; quote: string; description: string }>;
-  overall: { level: string; track: string; confidence: number; reasoning: string; key_uncertainties: string[]; recommend_human_review: boolean; human_review_reason: string };
+  overall: { level: string; track: string; confidence: number; reasoning: string; key_uncertainties: string[]; verification_targets: string[]; recommend_human_review: boolean; human_review_reason: string };
   judgment_change: { changed: boolean; from_level: string; to_level: string; reason: string; key_new_evidence: string[] } | null;
 }
 
 function makeFakeEval(level: string, track = '个人深度轨道', confidence = 0.8): MinimalEvalResponse {
+  // v0.4：跨字段断言要求
+  //   · 非 L4/L4_pending 等级 track 必须 "无"
+  //   · L4_pending 时 l3_gates 三门槛全 true + d4_spillover=true + spillover_form 非 null
+  //   · L4_pending 时 confidence ≤ 0.80、verification_targets ≥ 3、recommend_human_review=true
+  const isL4Pending = level === 'L4_pending';
+  const effectiveTrack = isL4Pending ? track : '无';
+  const effectiveConfidence = isL4Pending ? Math.min(confidence, 0.8) : confidence;
+  const verificationTargets = isL4Pending
+    ? ['候选人提到的核对清单，目前有哪些人在用、用在什么场景', '该做法从第一版到现在改过哪些地方，为什么改', '最近一次发现 AI 给出错误信息的具体情况']
+    : [];
   return {
+    meta: { evaluation_stage: 'A', levels_version: '0.4', dimensions_version: '0.1' },
     dimensions: [
-      { code: 'D1', name: '使用强度', level: 'L2', insufficient_evidence: false, evidence: [], confidence: 0.8, reasoning: 'r' },
-      { code: 'D2', name: '核验意识', level: 'L2', insufficient_evidence: false, evidence: [], confidence: 0.8, reasoning: 'r' },
-      { code: 'D3', name: '迭代能力', level: 'L2', insufficient_evidence: false, evidence: [], confidence: 0.8, reasoning: 'r' },
-      { code: 'D4', name: '修改具体性', level: 'L2', insufficient_evidence: false, evidence: [], confidence: 0.8, reasoning: 'r' },
-      { code: 'D5', name: '复用资产', level: null, insufficient_evidence: true, evidence: [], confidence: 0.5, reasoning: 'r' },
-      { code: 'D6', name: '组织推动', level: null, insufficient_evidence: true, evidence: [], confidence: 0.5, reasoning: 'r' },
+      { code: 'D1', name: '使用强度与场景广度', level: 'L2', evidence_grade: 'E2', evidence_source: null, insufficient_evidence: false, evidence: [], confidence: 0.8, reasoning: 'r' },
+      { code: 'D2', name: '任务拆解与信息组织', level: 'L2', evidence_grade: 'E2', evidence_source: null, insufficient_evidence: false, evidence: [], confidence: 0.8, reasoning: 'r' },
+      { code: 'D3', name: '核验意识', level: 'L2', evidence_grade: 'E2', evidence_source: null, insufficient_evidence: false, evidence: [], confidence: 0.8, reasoning: 'r' },
+      { code: 'D4', name: '沉淀与外溢', level: 'L2', evidence_grade: 'E2', evidence_source: null, insufficient_evidence: false, evidence: [], confidence: 0.8, reasoning: 'r' },
     ],
+    gate_checks: {
+      l3_gates: { d2_decomposition: true, d3_verification: true, d4_personal_asset: true, task_corroboration: true },
+      l4_gate: isL4Pending
+        ? { d4_spillover: true, spillover_form: '他人采纳' }
+        : { d4_spillover: false, spillover_form: null },
+      notes: [],
+    },
     claim_reality_gap: { level: '无', description: '', interpretation: '无' },
+    level_caps: [],
     anomaly_signals: [],
     red_lines: [],
-    overall: { level, track, confidence, reasoning: 'r', key_uncertainties: [], recommend_human_review: false, human_review_reason: '' },
+    overall: {
+      level,
+      track: effectiveTrack,
+      confidence: effectiveConfidence,
+      reasoning: 'r',
+      key_uncertainties: [],
+      verification_targets: verificationTargets,
+      recommend_human_review: isL4Pending,
+      human_review_reason: isL4Pending ? 'L4_pending 需现场验证外溢事实' : '',
+    },
     judgment_change: null,
   };
 }
@@ -123,7 +152,7 @@ describe('InitialEvaluationService A 评估 (简化)', () => {
       createdAt: now, startedAt: now, submittedAt: now,
     });
     await questionnaireRepo.save({
-      assessmentId: id, q1: 'A', q2: JSON.stringify(['A']), q3: 'A', q4: 'A', q5: 'A',
+      assessmentId: id, q1: 'A', q2: 'A', q3: 'A', q4: 'A', q5: 'A',
       submittedAt: now,
     });
     await dialogueRepo.save({
@@ -145,9 +174,11 @@ describe('InitialEvaluationService A 评估 (简化)', () => {
     await assessmentRepo.delete({ id });
   }
 
-  it('L3_pending → PENDING_INTERVIEW + evaluation(A) 落库', async () => {
+  it('L4_pending → PENDING_INTERVIEW + evaluation(A) 落库', async () => {
+    // v0.4：L3_pending 已废除，L3 可在阶段 A 直接输出且不触发面试。
+    // 唯一触发面试的 pending 等级是 L4_pending。
     const id = await seedEvaluating();
-    const fake = makeFakeEval('L3_pending', '团队负责人轨道', 0.55);
+    const fake = makeFakeEval('L4_pending', '团队负责人轨道', 0.55);
     (llmClient as unknown as { call: typeof llmClient.call }).call = (async () => ({
       raw: JSON.stringify(fake),
       parsed: fake as unknown as never,
@@ -156,23 +187,40 @@ describe('InitialEvaluationService A 评估 (简化)', () => {
 
     const result = await service.runInitialEvaluation(id);
     expect(result.status).toBe(AssessmentStatus.PENDING_INTERVIEW);
-    expect(result.levelA).toBe('L3_pending');
+    expect(result.levelA).toBe('L4_pending');
 
     // evaluation(A) 落库
     const evalA = await evaluationRepo.findOne({ where: { assessmentId: id, type: 'A' } });
     expect(evalA).not.toBeNull();
-    expect(evalA!.level).toBe('L3_pending');
+    expect(evalA!.level).toBe('L4_pending');
 
     // consistency 落库（仅 levelA，其他 null）
     const cons = await consistencyRepo.findOne({ where: { assessmentId: id } });
     expect(cons).not.toBeNull();
-    expect(cons!.levelA).toBe('L3_pending');
+    expect(cons!.levelA).toBe('L4_pending');
     expect(cons!.levelB).toBeNull();
     expect(cons!.levelC).toBeNull();
 
     // 评估状态
     const a = await assessmentRepo.findOne({ where: { id } });
     expect(a!.status).toBe(AssessmentStatus.PENDING_INTERVIEW);
+
+    await cleanup(id);
+  });
+
+  it('L3 高置信 + 个人深度轨道 → COMPLETED（v0.4：L3 不再 pending）', async () => {
+    // v0.4：L3 可在阶段 A 直接确定输出，不再触发面试（无 L3_pending）
+    const id = await seedEvaluating();
+    const fake = makeFakeEval('L3', '无', 0.85);
+    (llmClient as unknown as { call: typeof llmClient.call }).call = (async () => ({
+      raw: JSON.stringify(fake),
+      parsed: fake as unknown as never,
+      logId: 'mock', model: 'mock', latencyMs: 10,
+    })) as typeof llmClient.call;
+
+    const result = await service.runInitialEvaluation(id);
+    expect(result.status).toBe(AssessmentStatus.COMPLETED);
+    expect(result.levelA).toBe('L3');
 
     await cleanup(id);
   });

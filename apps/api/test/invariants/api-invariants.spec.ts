@@ -151,9 +151,9 @@ describeIfReady('API 层不变量：报告/状态机/越权 (e2e, mysql)', () =>
 
   async function seedEvalA(
     assessmentId: string,
-    level = 'L3_pending',
+    level = 'L4_pending',
     confidence = 0.55,
-    resultJson: unknown = { dimensions: [{ code: 'D5', level: 'L3' }] },
+    resultJson: unknown = { dimensions: [{ code: 'D4', level: 'L3' }] },
   ): Promise<EvaluationEntity> {
     const row = evaluationRepo.create({
       id: crypto.randomUUID(),
@@ -317,7 +317,7 @@ describeIfReady('API 层不变量：报告/状态机/越权 (e2e, mysql)', () =>
       beforeAll(async () => {
         const row = await seedAssessment(AssessmentStatus.PENDING_INTERVIEW, interviewerId);
         assessmentId = row.id;
-        await seedEvalA(assessmentId, 'L3_pending', 0.55);
+        await seedEvalA(assessmentId, 'L4_pending', 0.55);
         await seedDialogue(assessmentId, 'examiner', 'S1.1', 'ai', {
           goal_coverage: 0.6,
           answer_vagueness: 0.4,
@@ -401,7 +401,7 @@ describeIfReady('API 层不变量：报告/状态机/越权 (e2e, mysql)', () =>
       beforeAll(async () => {
         const row = await seedAssessment(AssessmentStatus.COMPLETED, interviewerId);
         assessmentId = row.id;
-        await seedEvalA(assessmentId, 'L3_pending', 0.6);
+        await seedEvalA(assessmentId, 'L4_pending', 0.6);
         await seedEvalC(assessmentId);
         await seedDialogue(assessmentId, 'examiner', 'S1.1', 'ai', {
           goal_coverage: 0.5,
@@ -418,7 +418,7 @@ describeIfReady('API 层不变量：报告/状态机/越权 (e2e, mysql)', () =>
         if (dto.locked) throw new Error('unreachable');
         expect(dto.evaluationA).not.toBeNull();
         expect(dto.evaluationC).not.toBeNull();
-        expect(dto.evaluationA?.level).toBe('L3_pending');
+        expect(dto.evaluationA?.level).toBe('L4_pending');
         expect(dto.evaluationC?.level).toBe('L3');
       });
 
@@ -437,7 +437,7 @@ describeIfReady('API 层不变量：报告/状态机/越权 (e2e, mysql)', () =>
       beforeAll(async () => {
         const locked = await seedAssessment(AssessmentStatus.PENDING_INTERVIEW, interviewerId);
         lockedId = locked.id;
-        await seedEvalA(lockedId, 'L3_pending');
+        await seedEvalA(lockedId, 'L4_pending');
 
         const completed = await seedAssessment(AssessmentStatus.COMPLETED, interviewerId);
         completedId = completed.id;
@@ -484,7 +484,7 @@ describeIfReady('API 层不变量：报告/状态机/越权 (e2e, mysql)', () =>
     beforeAll(async () => {
       const row = await seedAssessment(AssessmentStatus.PENDING_INTERVIEW, interviewerId);
       assessmentId = row.id;
-      await seedEvalA(assessmentId, 'L3_pending', 0.55);
+      await seedEvalA(assessmentId, 'L4_pending', 0.55);
       await seedDialogue(assessmentId, 'examiner', 'S1.1', 'ai', {
         goal_coverage: 0.5,
         answer_vagueness: 0.3,

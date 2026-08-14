@@ -154,7 +154,7 @@ describe('工具模式上下文隔离 (PoC 不变量 1)', () => {
       questionnaireRepo.findOne.mockResolvedValue({
         assessmentId: ASSESSMENT_ID,
         q1: '每天多次使用',
-        q2: { tools: ['ChatGPT', 'Claude'] },
+        q2: 'B',
         q3: '给过同事用',
         q4: '经常',
         q5: '主要做数据清洗',
@@ -272,7 +272,7 @@ describe('工具模式上下文隔离 (PoC 不变量 1)', () => {
       questionnaireRepo.findOne.mockResolvedValue({
         assessmentId: ASSESSMENT_ID,
         q1: '每天多次使用',
-        q2: { tools: ['ChatGPT'] },
+        q2: 'A',
         q3: '给过同事用',
         q4: '经常',
         q5: '数据清洗',

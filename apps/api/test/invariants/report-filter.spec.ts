@@ -38,7 +38,7 @@ function makeAssessment(
   };
 }
 
-function makeEvalA(level = 'L3_pending'): EvaluationSummary {
+function makeEvalA(level = 'L4_pending'): EvaluationSummary {
   return {
     id: 'evalA1',
     type: 'A',
@@ -48,7 +48,7 @@ function makeEvalA(level = 'L3_pending'): EvaluationSummary {
     recommendHumanReview: true,
     resultJson: {
       dimensions: [
-        { code: 'D5', level: 'L3', reasoning: '候选人自述中提及流程改造' },
+        { code: 'D4', level: 'L3', reasoning: '候选人自述中提及流程改造' },
       ],
       claim_reality_gap: { level: '重大' },
       red_lines: [{ code: 'RL1' }],
@@ -127,7 +127,7 @@ function makeRawLog(withSignals = true): RawLogDto {
   return {
     questionnaire: {
       q1: '每天多次',
-      q2: { tools: ['ChatGPT'] },
+      q2: 'A',
       q3: '给过同事用',
       q4: '经常',
       q5: '数据清洗',
@@ -183,7 +183,7 @@ describe('报告过滤 A 结论锁定 (PoC 不变量 2)', () => {
     it('锁定期响应不出现 L0-L4 字符串', () => {
       const input: ReportFilterInput = {
         assessment: makeAssessment(AssessmentStatus.PENDING_INTERVIEW),
-        evaluationA: makeEvalA('L3_pending'),
+        evaluationA: makeEvalA('L4_pending'),
         evaluationC: null,
         judgmentB: null,
         outline: makeOutline(),
@@ -253,7 +253,7 @@ describe('报告过滤 A 结论锁定 (PoC 不变量 2)', () => {
       if (dto.locked) throw new Error('unreachable');
       expect(dto.evaluationA).not.toBeNull();
       expect(dto.evaluationC).not.toBeNull();
-      expect(dto.evaluationA?.level).toBe('L3_pending');
+      expect(dto.evaluationA?.level).toBe('L4_pending');
       expect(dto.evaluationC?.level).toBe('L3');
     });
   });

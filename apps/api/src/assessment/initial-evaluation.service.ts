@@ -12,6 +12,7 @@ import { loadPrompt } from '@/llm/prompt-loader';
 import { interpolate } from '@/llm/interpolator';
 import { EvaluationResponseSchema, type EvaluationResponse } from '@/llm/schemas/evaluation.schema';
 import { renderLevelDefinitions } from './levels.config';
+import { renderDimensionDefinitions } from './dimensions.config';
 import { computeConsistency, type ConsistencyInput } from './consistency';
 import {
   AssessmentStatus,
@@ -27,6 +28,7 @@ import {
   type FullLogToolTask,
 } from './full-log-truncator';
 import { OutlineService } from './outline.service';
+import { assertEvaluationStageRules } from './evaluation-assertions';
 
 // A 评估 Service（架构 4.3 / PRD 4.5）
 //
@@ -94,6 +96,7 @@ export class InitialEvaluationService {
     try {
       const systemPrompt = interpolate(loadPrompt('evaluation'), {
         level_definitions: renderLevelDefinitions(),
+        dimension_definitions: renderDimensionDefinitions(),
         full_log: fullLog,
       });
       const result = await this.llmClient.call({
@@ -104,6 +107,8 @@ export class InitialEvaluationService {
         schema: EvaluationResponseSchema,
       });
       evalResponse = result.parsed as EvaluationResponse;
+      // R3 三条禁止：阶段 A 禁止输出 L4；仅 L4_pending 合法
+      assertEvaluationStageRules(evalResponse);
     } catch (e) {
       // R3：输入超长 → 截断重试一次
       if (e instanceof InputTooLongError) {
@@ -116,6 +121,7 @@ export class InitialEvaluationService {
           try {
             const systemPrompt = interpolate(loadPrompt('evaluation'), {
               level_definitions: renderLevelDefinitions(),
+              dimension_definitions: renderDimensionDefinitions(),
               full_log: fullLog,
             });
             const result = await this.llmClient.call({
@@ -126,6 +132,7 @@ export class InitialEvaluationService {
               schema: EvaluationResponseSchema,
             });
             evalResponse = result.parsed as EvaluationResponse;
+            assertEvaluationStageRules(evalResponse);
             return await this.finalizeSuccess(assessment, evalResponse);
           } catch (e2) {
             this.logger.warn(
@@ -243,7 +250,7 @@ export class InitialEvaluationService {
       questionnaire: questionnaire
         ? {
             Q1: questionnaire.q1,
-            Q2: questionnaire.q2 as string[] | null,
+            Q2: questionnaire.q2,
             Q3: questionnaire.q3,
             Q4: questionnaire.q4,
             Q5: questionnaire.q5,

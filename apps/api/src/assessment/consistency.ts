@@ -1,40 +1,40 @@
 // 三方一致性计算（架构 5.1 / PRD 4.9）
 //
-// 归一化规则：
+// 归一化规则（levels.yaml v0.4）：
 //   L0=0, L1=1, L2=2, L3=3, L4=4
-//   L3_pending=3, L4_pending=4（pending 视为对应等级参与比较）
+//   L4_pending=4（pending 视为对应等级参与比较）
 //   "是否 pending" 不进入 gap 计算
 //
 // a_eq_b / b_eq_c / a_eq_c：仅在数值相等时为 true
 // pending 与确定等级视为相等：
-//   A=L3_pending, C=L3 → a_eq_c=true, gap=0
+//   A=L4_pending, C=L4 → a_eq_c=true, gap=0
 //
 // B 的 level 字段不含 pending（面试官直接给确定等级 L0–L4）
+//
+// v0.4 变更：L3_pending 已废除。L3 可在阶段 A 直接确定输出。
+// 唯一的 pending 等级是 L4_pending。
 
-export type LevelString =
-  | 'L0'
-  | 'L1'
-  | 'L2'
-  | 'L3'
-  | 'L4'
-  | 'L3_pending'
-  | 'L4_pending';
+import { EVALUATION_LEVELS, normalizeLevel } from '@prism/shared';
 
-const LEVEL_VALUE: Record<LevelString, number> = {
+// level → 数值映射，仅识别 v0.4 合法等级
+// 先用字符串版 normalizeLevel 把 L4_pending 折叠为 L4，再查表
+const LEVEL_VALUE: Record<string, number> = {
   L0: 0,
   L1: 1,
   L2: 2,
   L3: 3,
   L4: 4,
-  L3_pending: 3,
-  L4_pending: 4,
 };
 
-export function normalizeLevel(level: string): number | null {
-  if (level in LEVEL_VALUE) {
-    return LEVEL_VALUE[level as LevelString];
-  }
-  return null;
+// v0.4 合法等级集合——L3_pending 已废除，不应被静默接受
+const VALID_EVALUATION_LEVELS = new Set<string>(EVALUATION_LEVELS);
+
+// 数字版归一：合法等级返回 0-4，未知或已废除等级返回 null
+// 用于 gap 计算。外部若需字符串归一（L4_pending → 'L4'）请用 @prism/shared 的 normalizeLevel
+export function levelValue(level: string): number | null {
+  if (!VALID_EVALUATION_LEVELS.has(level)) return null;
+  const base = normalizeLevel(level);
+  return LEVEL_VALUE[base] ?? null;
 }
 
 export interface ConsistencyInput {
@@ -54,9 +54,9 @@ export interface ConsistencyResult {
 }
 
 export function computeConsistency(input: ConsistencyInput): ConsistencyResult {
-  const a = input.levelA ? normalizeLevel(input.levelA) : null;
-  const b = input.levelB ? normalizeLevel(input.levelB) : null;
-  const c = input.levelC ? normalizeLevel(input.levelC) : null;
+  const a = input.levelA ? levelValue(input.levelA) : null;
+  const b = input.levelB ? levelValue(input.levelB) : null;
+  const c = input.levelC ? levelValue(input.levelC) : null;
 
   // 仅当两侧都有值时才计算相等与 gap
   const aEqB = a !== null && b !== null ? a === b : null;

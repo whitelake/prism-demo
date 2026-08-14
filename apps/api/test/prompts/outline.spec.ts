@@ -12,15 +12,20 @@ import { SchemaValidationError } from '@/llm/json-parser';
 const API_KEY_CONFIGURED = isApiKeyConfigured();
 const describeIfReady = API_KEY_CONFIGURED ? describe : describe.skip;
 
-const LEVEL_DEFINITIONS = `L0: 未使用AI工具
-L1: 偶尔使用，仅完成单一任务，无核验意识
-L2: 规律使用，会提供基本背景，偶有核验行为
-L3: 系统化使用，多轮迭代，产出可复用资产，流程改造
-L4: 影响他人使用AI，组织级推动，方法论沉淀`;
+const LEVEL_DEFINITIONS = `L0: 未达入门
+L1: 入门
+L2: 进阶
+L3: 熟练
+L4: 专家`;
+
+const DIMENSION_DEFINITIONS = `D1: 使用强度与场景广度
+D2: 任务拆解与信息组织
+D3: 核验意识
+D4: 沉淀与外溢`;
 
 // 禁用词黑名单（来自 outline.md "严格禁止的表述"）
 // 注意：quote 字段是候选人原话逐字引用，正常日志中不应出现评估术语。
-// 若候选人原话本身含禁用词（如"流程改造"），属日志构造问题，应在日志层面规避。
+// 若候选人原话本身含禁用词（如"沉淀与外溢"），属日志构造问题，应在日志层面规避。
 const FORBIDDEN_PHRASES = [
   // 等级相关
   'L0', 'L1', 'L2', 'L3', 'L4',
@@ -28,9 +33,10 @@ const FORBIDDEN_PHRASES = [
   // 评价相关
   '优秀', '出色', '不足', '薄弱', '可疑', '存疑',
   '值得怀疑', '有待提高',
-  // 维度名称
-  '使用强度', '任务拆解', '核验意识', '流程改造',
-  '影响力', '组织推动',
+  // 维度名称（v0.4：4 维度）
+  '使用强度与场景广度', '任务拆解与信息组织', '核验意识', '沉淀与外溢',
+  // 旧维度名仍保留禁用，避免模型用旧术语绕过
+  '流程改造', '影响力', '组织推动',
   // 倾向暗示
   '可能在夸大', '疑似虚构', '说法站得住', '比较可信', '需要重点核实',
   // 结论暗示
@@ -115,6 +121,7 @@ async function callEval(log: FullLog) {
 
   const systemPrompt = interpolate(loadPrompt('evaluation'), {
     level_definitions: LEVEL_DEFINITIONS,
+    dimension_definitions: DIMENSION_DEFINITIONS,
     full_log: log,
   });
 

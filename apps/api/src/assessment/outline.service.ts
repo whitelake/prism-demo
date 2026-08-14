@@ -173,7 +173,7 @@ export class OutlineService {
       questionnaire: questionnaire
         ? {
             Q1: questionnaire.q1,
-            Q2: questionnaire.q2 as string[] | null,
+            Q2: questionnaire.q2,
             Q3: questionnaire.q3,
             Q4: questionnaire.q4,
             Q5: questionnaire.q5,

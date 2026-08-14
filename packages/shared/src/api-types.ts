@@ -1,6 +1,13 @@
 // 候选人端 + 面试官端 API 类型。
 // 前端只渲染后端返回的 step/locked 字段，不实现业务判断逻辑。
 
+import {
+  DIMENSION_CODES,
+  EVIDENCE_GRADES,
+  EVALUATION_LEVELS,
+  TRACKS,
+} from './levels';
+
 export type AssessmentStage =
   | 'examiner'
   | 'questionnaire'
@@ -10,8 +17,35 @@ export type AssessmentStage =
   | 'final_evaluating'
   | 'completed';
 
-export type AssessmentLevel = 'L1' | 'L2' | 'L3' | 'L4' | 'L5';
-export type AssessmentTrack = 'A' | 'B' | 'C';
+// 与 config/levels.yaml v0.4、config/dimensions.yaml v0.1 对齐
+// 详见 config/prompts/evaluation.md 输出契约
+export type AssessmentLevel = (typeof EVALUATION_LEVELS)[number];
+
+// L4 轨道：仅当 overall.level 为 L4/L4_pending 时非"无"
+export type AssessmentTrack = (typeof TRACKS)[number];
+
+// 维度代号：固定 4 项，顺序 D1 D2 D3 D4
+export type DimensionCode = (typeof DIMENSION_CODES)[number];
+
+// 维度级证据等级
+export type EvidenceGrade = (typeof EVIDENCE_GRADES)[number];
+
+// E3 证据的印证来源类型；仅 evidence_grade = E3 时非 null
+// 注意：与 EvidenceLocation（单条引用出自日志哪部分）是不同字段
+export type DimensionEvidenceSource = 'task' | 'interview';
+
+// 单条原文引用出自日志的哪个部分
+export type EvidenceLocation =
+  | 'questionnaire_result'
+  | 'examiner_dialogue'
+  | 'tool_tasks'
+  | 'interview_transcript';
+
+// 定级红线代号（等级上限）
+export type LevelCapCode = 'LC1' | 'LC2' | 'LC3' | 'LC4' | 'LC5';
+
+// 安全红线代号（独立于等级）
+export type RedLineCode = 'RL1' | 'RL2' | 'RL3' | 'RL4';
 
 export type CandidateStep = 'entry' | 'questionnaire' | 'examiner' | 'tool' | 'finished';
 export type DialogueMode = 'examiner' | 'tool';

@@ -1,32 +1,53 @@
 import {
   computeConsistency,
   consistencySummary,
-  normalizeLevel,
+  levelValue,
 } from '@/assessment/consistency';
+import { normalizeLevel } from '@prism/shared';
 
 // PRD 4.9 / 架构 5.1 三方一致性计算
-// 归一化：L0=0, L1=1, L2=2, L3=3, L4=4
-//         L3_pending=3, L4_pending=4（pending 视为对应等级）
+// 归一化（levels.yaml v0.4）：L0=0, L1=1, L2=2, L3=3, L4=4
+//         L4_pending=4（pending 视为对应等级）
+// v0.4 变更：L3_pending 已废除——L3 可在阶段 A 直接确定输出。
 // B 不含 pending（面试官给确定等级 L0–L4）
 
 describe('consistency 纯函数 (PoC 不变量 2 / PRD 4.9)', () => {
-  describe('normalizeLevel', () => {
-    it('L0-L4 → 0-4', () => {
-      expect(normalizeLevel('L0')).toBe(0);
-      expect(normalizeLevel('L1')).toBe(1);
-      expect(normalizeLevel('L2')).toBe(2);
-      expect(normalizeLevel('L3')).toBe(3);
-      expect(normalizeLevel('L4')).toBe(4);
+  describe('normalizeLevel (字符串版，@prism/shared)', () => {
+    it('L4_pending → L4', () => {
+      expect(normalizeLevel('L4_pending')).toBe('L4');
     });
 
-    it('L3_pending / L4_pending 视为对应等级', () => {
-      expect(normalizeLevel('L3_pending')).toBe(3);
-      expect(normalizeLevel('L4_pending')).toBe(4);
+    it('非 pending 等级原样返回', () => {
+      expect(normalizeLevel('L0')).toBe('L0');
+      expect(normalizeLevel('L4')).toBe('L4');
+    });
+
+    it('不校验合法性，未知字符串原样返回', () => {
+      expect(normalizeLevel('L5')).toBe('L5');
+      expect(normalizeLevel('L3_pending')).toBe('L3');
+    });
+  });
+
+  describe('levelValue (数字版，consistency)', () => {
+    it('L0-L4 → 0-4', () => {
+      expect(levelValue('L0')).toBe(0);
+      expect(levelValue('L1')).toBe(1);
+      expect(levelValue('L2')).toBe(2);
+      expect(levelValue('L3')).toBe(3);
+      expect(levelValue('L4')).toBe(4);
+    });
+
+    it('L4_pending 视为 L4', () => {
+      expect(levelValue('L4_pending')).toBe(4);
+    });
+
+    it('v0.4 已废除的 L3_pending 不再可识别', () => {
+      expect(levelValue('L3_pending')).toBeNull();
     });
 
     it('未知字符串返回 null', () => {
-      expect(normalizeLevel('L5')).toBeNull();
-      expect(normalizeLevel('')).toBeNull();
+      expect(levelValue('L5')).toBeNull();
+      expect(levelValue('')).toBeNull();
     });
   });
 
@@ -43,14 +64,14 @@ describe('consistency 纯函数 (PoC 不变量 2 / PRD 4.9)', () => {
       expect(r.maxLevelGap).toBe(0);
     });
 
-    it('A=L3_pending, C=L3 → pending 与确定等级视为相等', () => {
+    it('A=L4_pending, C=L4 → pending 与确定等级视为相等', () => {
       const r = computeConsistency({
-        levelA: 'L3_pending',
-        levelB: 'L3',
-        levelC: 'L3',
+        levelA: 'L4_pending',
+        levelB: 'L4',
+        levelC: 'L4',
       });
       expect(r.aEqC).toBe(true);
-      expect(r.aEqB).toBe(true); // L3_pending 与 L3 都归一为 3
+      expect(r.aEqB).toBe(true); // L4_pending 与 L4 都归一为 4
       expect(r.maxLevelGap).toBe(0);
     });
 
@@ -80,9 +101,9 @@ describe('consistency 纯函数 (PoC 不变量 2 / PRD 4.9)', () => {
 
     it('B 未提交 → aEqB/bEqC=null, 仅算 aEqC', () => {
       const r = computeConsistency({
-        levelA: 'L3_pending',
+        levelA: 'L4_pending',
         levelB: null,
-        levelC: 'L3',
+        levelC: 'L4',
       });
       expect(r.aEqB).toBeNull();
       expect(r.bEqC).toBeNull();
@@ -131,9 +152,9 @@ describe('consistency 纯函数 (PoC 不变量 2 / PRD 4.9)', () => {
     it('三方齐备 + gap=0 → "一致"', () => {
       expect(
         consistencySummary({
-          levelA: 'L3',
-          levelB: 'L3',
-          levelC: 'L3',
+          levelA: 'L4_pending',
+          levelB: 'L4',
+          levelC: 'L4',
         }),
       ).toBe('一致');
     });
@@ -141,7 +162,7 @@ describe('consistency 纯函数 (PoC 不变量 2 / PRD 4.9)', () => {
     it('三方齐备 + gap=1 → "差1级"', () => {
       expect(
         consistencySummary({
-          levelA: 'L3_pending',
+          levelA: 'L4_pending',
           levelB: 'L3',
           levelC: 'L4',
         }),

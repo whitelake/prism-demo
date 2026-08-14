@@ -112,7 +112,7 @@ describe('OutlineService 题纲生成 (PoC 不变量 4)', () => {
     await questionnaireRepo.save({
       assessmentId: id,
       q1: 'A',
-      q2: JSON.stringify(['B1', 'B2']),
+      q2: 'B',
       q3: 'C',
       q4: 'D',
       q5: 'E',

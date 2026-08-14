@@ -76,7 +76,7 @@ export interface DialogueLogDtoItem {
 export interface RawLogDto {
   questionnaire: {
     q1: string | null;
-    q2: unknown;
+    q2: string | null;
     q3: string | null;
     q4: string | null;
     q5: string | null;

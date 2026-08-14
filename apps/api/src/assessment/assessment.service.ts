@@ -174,7 +174,7 @@ export class AssessmentService {
   // PRD 4.8 / api-spec 3.4：返回 messages 不含 signals（不变量 3）
   async submitQuestionnaire(
     assessmentId: string,
-    answers: { q1?: string; q2?: unknown; q3?: string; q4?: string; q5?: string },
+    answers: { q1?: string; q2?: string; q3?: string; q4?: string; q5?: string },
   ): Promise<{ submittedAt: Date; next: FirstTurnResult }> {
     const { submittedAt } = await this.questionnaireService.submit(assessmentId, answers);
     const next = await this.startQuestionnaireFlow(assessmentId);
@@ -186,7 +186,7 @@ export class AssessmentService {
   // 与 submitQuestionnaire（同步等 LLM）并存：后者供 invariants 测试与同步契约使用
   async submitQuestionnaireLight(
     assessmentId: string,
-    answers: { q1?: string; q2?: unknown; q3?: string; q4?: string; q5?: string },
+    answers: { q1?: string; q2?: string; q3?: string; q4?: string; q5?: string },
   ): Promise<{ submittedAt: Date; next: FirstTurnResult }> {
     const { submittedAt } = await this.questionnaireService.submit(assessmentId, answers);
     const a = await this.requireAssessment(assessmentId);

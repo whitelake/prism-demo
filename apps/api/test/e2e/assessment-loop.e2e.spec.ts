@@ -33,11 +33,14 @@ import type { EvaluationResponse } from '@/llm/schemas/evaluation.schema';
 // 不变量 3：全流程响应体不含 signals
 
 interface MinimalEvalResponse {
-  dimensions: Array<{ code: string; name: string; level: string | null; insufficient_evidence: boolean; evidence: Array<{ source: string; location: string; quote: string; note: string }>; confidence: number; reasoning: string }>;
+  meta: { evaluation_stage: 'A' | 'C'; levels_version: string; dimensions_version: string };
+  dimensions: Array<{ code: string; name: string; level: string | null; evidence_grade: string; evidence_source: string | null; insufficient_evidence: boolean; evidence: Array<{ source: string; location: string; quote: string; note: string }>; confidence: number; reasoning: string }>;
+  gate_checks: { l3_gates: { d2_decomposition: boolean; d3_verification: boolean; d4_personal_asset: boolean; task_corroboration: boolean }; l4_gate: { d4_spillover: boolean; spillover_form: string | null }; notes: string[] };
   claim_reality_gap: { level: string; description: string; interpretation: string };
+  level_caps: Array<{ code: string; cap_level: string; quote: string; description: string }>;
   anomaly_signals: Array<{ type: string; evidence: string; description: string }>;
   red_lines: Array<{ code: string; quote: string; description: string }>;
-  overall: { level: string; track: string; confidence: number; reasoning: string; key_uncertainties: string[]; recommend_human_review: boolean; human_review_reason: string };
+  overall: { level: string; track: string; confidence: number; reasoning: string; key_uncertainties: string[]; verification_targets: string[]; recommend_human_review: boolean; human_review_reason: string };
   judgment_change: { changed: boolean; from_level: string; to_level: string; reason: string; key_new_evidence: string[] } | null;
 }
 
@@ -58,19 +61,39 @@ function examinerResponse(question: string, signals: Partial<ExaminerResponse['s
 
 function evalResponseA(): MinimalEvalResponse {
   return {
+    meta: { evaluation_stage: 'A', levels_version: '0.4', dimensions_version: '0.1' },
     dimensions: [
-      { code: 'D1', name: '使用强度', level: 'L2', insufficient_evidence: false, evidence: [], confidence: 0.8, reasoning: 'r' },
-      { code: 'D2', name: '核验意识', level: 'L2', insufficient_evidence: false, evidence: [], confidence: 0.8, reasoning: 'r' },
-      { code: 'D3', name: '迭代能力', level: 'L2', insufficient_evidence: false, evidence: [], confidence: 0.8, reasoning: 'r' },
-      { code: 'D4', name: '修改具体性', level: 'L2', insufficient_evidence: false, evidence: [], confidence: 0.8, reasoning: 'r' },
-      { code: 'D5', name: '复用资产', level: null, insufficient_evidence: true, evidence: [], confidence: 0.5, reasoning: 'r' },
-      { code: 'D6', name: '组织推动', level: null, insufficient_evidence: true, evidence: [], confidence: 0.5, reasoning: 'r' },
+      { code: 'D1', name: '使用强度与场景广度', level: 'L2', evidence_grade: 'E2', evidence_source: null, insufficient_evidence: false, evidence: [], confidence: 0.8, reasoning: 'r' },
+      { code: 'D2', name: '任务拆解与信息组织', level: 'L2', evidence_grade: 'E2', evidence_source: null, insufficient_evidence: false, evidence: [], confidence: 0.8, reasoning: 'r' },
+      { code: 'D3', name: '核验意识', level: 'L2', evidence_grade: 'E2', evidence_source: null, insufficient_evidence: false, evidence: [], confidence: 0.8, reasoning: 'r' },
+      { code: 'D4', name: '沉淀与外溢', level: 'L2', evidence_grade: 'E2', evidence_source: null, insufficient_evidence: false, evidence: [], confidence: 0.8, reasoning: 'r' },
     ],
+    gate_checks: {
+      // L4_pending 要求 l3_gates 三门槛全 true（R6 管理者拦截）+ d4_spillover=true
+      l3_gates: { d2_decomposition: true, d3_verification: true, d4_personal_asset: true, task_corroboration: true },
+      l4_gate: { d4_spillover: true, spillover_form: '他人采纳' },
+      notes: [],
+    },
     claim_reality_gap: { level: '重大', description: 'gap', interpretation: '倾向夸大' },
+    level_caps: [],
     anomaly_signals: [],
     red_lines: [],
-    // L3_pending + 团队负责人轨道 → 触发 shouldTriggerInterview
-    overall: { level: 'L3_pending', track: '团队负责人轨道', confidence: 0.55, reasoning: 'r', key_uncertainties: [], recommend_human_review: true, human_review_reason: '' },
+    // v0.4：L4_pending + 团队负责人轨道 → 触发 shouldTriggerInterview
+    // 跨字段断言要求：confidence≤0.80、verification_targets≥3、recommend_human_review=true 时 reason 非空
+    overall: {
+      level: 'L4_pending',
+      track: '团队负责人轨道',
+      confidence: 0.55,
+      reasoning: 'r',
+      key_uncertainties: [],
+      verification_targets: [
+        '候选人提到的核对清单，目前有哪些人在用、用在什么场景',
+        '该做法从第一版到现在改过哪些地方，为什么改',
+        '最近一次发现 AI 给出错误信息的具体情况',
+      ],
+      recommend_human_review: true,
+      human_review_reason: 'L4_pending 需现场验证外溢事实',
+    },
     judgment_change: null,
   };
 }
@@ -197,7 +220,7 @@ describe('候选人测评端到端 (e2e, mock LLM)', () => {
       setExaminerQueue([examinerResponse('S1.1 首问：今天用AI做了什么？')]);
 
       const qResult = await assessmentService.submitQuestionnaire(id, {
-        q1: 'A', q2: ['A'], q3: 'A', q4: 'A', q5: 'A',
+        q1: 'A', q2: 'A', q3: 'A', q4: 'A', q5: 'A',
       });
       expect(qResult.next.currentStage).toBe('S1.1');
       expect(qResult.next.messages[0]!.content).toContain('S1.1 首问');
@@ -273,7 +296,7 @@ describe('候选人测评端到端 (e2e, mock LLM)', () => {
       expect(t2Complete.step).toBe('finished');
       expect(t2Complete.status).toBe(AssessmentStatus.EVALUATING);
 
-      // 11. A 评估 → PENDING_INTERVIEW（mock 返回 L3_pending + 团队负责人轨道）
+      // 11. A 评估 → PENDING_INTERVIEW（mock 返回 L4_pending + 团队负责人轨道）
       const fakeEval = evalResponseA();
       (llmClient as unknown as { call: typeof llmClient.call }).call = (async () => ({
         raw: JSON.stringify(fakeEval),
@@ -283,12 +306,12 @@ describe('候选人测评端到端 (e2e, mock LLM)', () => {
 
       const evalResult = await initialEvalService.runInitialEvaluation(id);
       expect(evalResult.status).toBe(AssessmentStatus.PENDING_INTERVIEW);
-      expect(evalResult.levelA).toBe('L3_pending');
+      expect(evalResult.levelA).toBe('L4_pending');
 
       // 12. 不变量 2：PENDING_INTERVIEW 期间 GET 报告 A 字段被过滤
       const report = await reportService.getReport(id, interviewerId);
       const reportJson = JSON.stringify(report);
-      expect(reportJson).not.toContain('L3_pending');
+      expect(reportJson).not.toContain('L4_pending');
       expect(reportJson).not.toContain('evaluationA');
       // 状态确认为 PENDING_INTERVIEW（直接读 assessmentRepo）
       const finalA = await assessmentRepo.findOne({ where: { id } });
