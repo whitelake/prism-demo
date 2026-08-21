@@ -6,7 +6,7 @@ import {
   getPurposeParams,
   getRetryConfig,
   getBaseline,
-  getModelName,
+  getPurposeModel,
   getApiBase,
   getApiKey,
 } from './llm-params';
@@ -58,7 +58,7 @@ export class LlmClient {
   async call<T>(params: LlmCallParams<T>): Promise<LlmCallResult<T>> {
     const purposeParams = getPurposeParams(params.purpose);
     const baseline = getBaseline();
-    const model = getModelName();
+    const model = getPurposeModel(params.purpose);
     const apiKey = getApiKey();
     if (!apiKey) {
       throw new BadGatewayException(
@@ -257,7 +257,7 @@ export class LlmClient {
   ): AsyncGenerator<StreamChunk> {
     const purposeParams = getPurposeParams(params.purpose);
     const baseline = getBaseline();
-    const model = getModelName();
+    const model = getPurposeModel(params.purpose);
     const apiKey = getApiKey();
     if (!apiKey) {
       throw new BadGatewayException(

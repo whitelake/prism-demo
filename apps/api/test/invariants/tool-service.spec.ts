@@ -14,6 +14,7 @@ import { AssessmentStatus } from '@/assessment/assessment.state';
 import { ToolService } from '@/assessment/tool.service';
 import { ContextBuilder } from '@/assessment/context.builder';
 import { InitialEvaluationService } from '@/assessment/initial-evaluation.service';
+import { getTask } from '@/assessment/tasks.config';
 
 // 步骤 4 简化测试：tool 模式上下文隔离 + 任务切换
 // 不变量 1：LlmClient 收到的 systemPrompt 不含候选人姓名/问卷/T1 描述（currentTask=T2 时）
@@ -122,12 +123,13 @@ describe('ToolService 工具模式 + 任务切换 (简化)', () => {
     await cleanup(id);
   });
 
-  it('completeTask T1 < min_turns → SKIP_NOT_ALLOWED', async () => {
+  it('completeTask T1 取消 min_turns 限制后,0 candidate 也能切 T2', async () => {
+    // 产品决策 2026-08-20：取消 tool 模式 require_min_turns 限制（tasks.yaml T1/T2 均 0）
+    // 不变量校验：count=0 >= require_min_turns=0 → 不抛 SKIP_NOT_ALLOWED，正常推进
     const id = await seed('T1');
-    // 未生成任何 candidate 行 → count=0 < require_min_turns=5
-    await expect(toolService.completeTask(id)).rejects.toMatchObject({
-      code: 'SKIP_NOT_ALLOWED',
-    });
+    const result = await toolService.completeTask(id);
+    expect(result.step).toBe('tool');
+    expect(result.currentTask).toBe('T2');
     await cleanup(id);
   });
 
@@ -152,7 +154,9 @@ describe('ToolService 工具模式 + 任务切换 (简化)', () => {
     expect(cards).toHaveLength(2);
     expect(cards[0]!.card!.variant).toBe('task_done');
     expect(cards[1]!.card!.variant).toBe('task_brief');
-    expect(cards[1]!.card!.title).toBe('信息核查');
+    // T2 题面按 hashIndex(assessmentId) 选 variant
+    // 断言卡片 title 与 getTask('T2', id).title 一致,验证 variant 选择 + 卡片渲染端到端
+    expect(cards[1]!.card!.title).toBe(getTask('T2', id).title);
 
     await cleanup(id);
   });

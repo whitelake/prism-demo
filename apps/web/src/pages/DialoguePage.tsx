@@ -140,23 +140,65 @@ export function DialoguePage({ token, initial, onFinished }: Props) {
         },
       ],
     }));
+    let switchedToTool = false;
     try {
       const resp = await candidateApi.postMessage(token, content);
-      setState((s) => {
-        // 清掉本轮临时 candidate，再 append 后端返回的真实 messages（含 candidate + ai）
-        const withoutTemp = s.messages.filter((m) => m.id !== tempId);
-        return {
-          ...s,
-          step: resp.step === 'tool' ? 'tool' : 'examiner',
-          mode: resp.step === 'tool' ? 'tool' : 'examiner',
-          currentStage: resp.currentStage ?? (resp.step === 'tool' ? null : s.currentStage),
-          currentTask: resp.currentTask ?? s.currentTask,
-          turnIndex: resp.turnIndex ?? s.turnIndex,
-          messages: appendMessages(withoutTemp, resp.newMessages),
-          timer: resp.timer ?? s.timer,
-        };
-      });
-      if (resp.step === 'finished') onFinished(resp);
+      switchedToTool =
+        resp.step === 'tool' &&
+        !!resp.newMessages?.some((m) => m.card?.variant === 'mode_switch');
+
+      if (switchedToTool) {
+        // 切到 tool 模式：分批显示，2s 后 mode_switch，5s 后 task_brief
+        // thinking 在 5s 内持续显示「正在准备任务...」
+        const modeSwitch = resp.newMessages!.find((m) => m.card?.variant === 'mode_switch')!;
+        const taskBrief = resp.newMessages!.find((m) => m.card?.variant === 'task_brief');
+        const immediate = resp.newMessages!.filter((m) => !m.card);
+        setState((s) => {
+          const withoutTemp = s.messages.filter((m) => m.id !== tempId);
+          return {
+            ...s,
+            step: 'tool',
+            mode: 'tool',
+            currentStage: null,
+            currentTask: resp.currentTask ?? 'T1',
+            turnIndex: resp.turnIndex ?? 0,
+            messages: appendMessages(withoutTemp, immediate),
+            timer: resp.timer ?? s.timer,
+          };
+        });
+        setThinkingText('正在准备任务...');
+        // thinking 保持 true，5s 后由 setTimeout 清
+        setTimeout(() => {
+          setState((s) => ({
+            ...s,
+            messages: appendMessages(s.messages, [modeSwitch]),
+          }));
+        }, 2000);
+        setTimeout(() => {
+          setState((s) => ({
+            ...s,
+            messages: taskBrief ? appendMessages(s.messages, [taskBrief]) : s.messages,
+          }));
+          setThinking(false);
+          setThinkingText(undefined);
+        }, 5000);
+      } else {
+        setState((s) => {
+          // 清掉本轮临时 candidate，再 append 后端返回的真实 messages（含 candidate + ai）
+          const withoutTemp = s.messages.filter((m) => m.id !== tempId);
+          return {
+            ...s,
+            step: resp.step === 'tool' ? 'tool' : 'examiner',
+            mode: resp.step === 'tool' ? 'tool' : 'examiner',
+            currentStage: resp.currentStage ?? (resp.step === 'tool' ? null : s.currentStage),
+            currentTask: resp.currentTask ?? s.currentTask,
+            turnIndex: resp.turnIndex ?? s.turnIndex,
+            messages: appendMessages(withoutTemp, resp.newMessages),
+            timer: resp.timer ?? s.timer,
+          };
+        });
+        if (resp.step === 'finished') onFinished(resp);
+      }
     } catch (e) {
       const err = e as ApiException;
       // 失败：移除临时 candidate（未落库），保留 input 让用户重发
@@ -171,7 +213,10 @@ export function DialoguePage({ token, initial, onFinished }: Props) {
       setInput(content);
     } finally {
       setSubmitting(false);
-      setThinking(false);
+      // 切 tool 时 thinking 由 5s setTimeout 自行清，不在此处清
+      if (!switchedToTool) {
+        setThinking(false);
+      }
     }
   }
 

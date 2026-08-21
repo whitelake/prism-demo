@@ -43,10 +43,10 @@ describeIfReady('llm_call_log 落库验证 (e2e, mysql)', () => {
     if (logger) logger.clear();
   });
 
-  it('I1: 调用前先 INSERT llm_call_log（status=failed, response_raw=null）', async () => {
+  it('I1: 调用前先 INSERT llm_call_log（status=pending, response_raw=null）', async () => {
     const assessmentId = 'test-invariant-i1-' + Date.now();
     // 故意触发一个会失败的调用：不传 systemPrompt 让模型抛错或 timeout
-    // 这里直接验证 logRequest 的副作用：调用前 DB 中已有 status=failed 的记录
+    // 这里直接验证 logRequest 的副作用：调用前 DB 中已有 status=pending 的记录
     const beforeCount = await repo.count({ where: { assessmentId } });
     expect(beforeCount).toBe(0);
 
@@ -67,7 +67,7 @@ describeIfReady('llm_call_log 落库验证 (e2e, mysql)', () => {
     expect(String(r.id)).toBe(id);
     expect(r.purpose).toBe('eval');
     expect(r.model).toBe('qwen-plus');
-    expect(r.status).toBe('failed');
+    expect(r.status).toBe('pending');
     expect(r.responseRaw).toBeNull();
     expect(r.requestMessages).toContain('"role":"system"');
   });

@@ -1,4 +1,4 @@
-import { Alert, Card, Spin, Typography } from 'antd';
+import { Card, Spin, Typography } from 'antd';
 import type { DialogueMessage, DialogueMode } from '@prism/shared';
 
 const { Text, Paragraph } = Typography;
@@ -98,13 +98,20 @@ function SystemCardView({ msg }: { msg: DialogueMessage }) {
         </Card>
       )}
       {variant === 'mode_switch' && (
-        <Alert
-          type="warning"
-          message="接下来是不同的对话模式"
-          description={undefined}
-          showIcon
-          style={{ marginTop: 8 }}
-        />
+        <div
+          style={{
+            marginTop: 12,
+            paddingTop: 12,
+            borderTop: '1px solid var(--pd-border)',
+            textAlign: 'center',
+            fontSize: 22,
+            fontWeight: 700,
+            color: 'var(--pd-warn)',
+            letterSpacing: '0.5px',
+          }}
+        >
+          接下来是不同的对话模式
+        </div>
       )}
     </Card>
   );

@@ -80,6 +80,15 @@ export function getModelName(): string {
   return process.env.LLM_MODEL ?? 'qwen-plus';
 }
 
+// 按用途选模型：对话/任务速度优先（qwen3.8-27b），评估/题纲能力优先（qwen3.8-max）
+// 从 .env 配置：LLM_MODEL_DIALOG、LLM_MODEL_EVAL，回退到 LLM_MODEL
+export function getPurposeModel(purpose: LlmPurpose): string {
+  if (purpose === 'examiner' || purpose === 'tool') {
+    return process.env.LLM_MODEL_DIALOG ?? process.env.LLM_MODEL ?? 'qwen-plus';
+  }
+  return process.env.LLM_MODEL_EVAL ?? process.env.LLM_MODEL ?? 'qwen-plus';
+}
+
 export function getApiBase(): string {
   return (
     process.env.DASHSCOPE_BASE_URL ??

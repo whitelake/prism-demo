@@ -12,7 +12,7 @@ export interface LlmCallLogEntry {
   promptTokens?: number;
   completionTokens?: number;
   latencyMs?: number;
-  status: 'success' | 'failed';
+  status: 'pending' | 'success' | 'failed';
   errorMsg?: string;
   ts: Date;
 }
@@ -75,7 +75,7 @@ export class LlmLogger {
       model: req.model,
       temperature: req.temperature,
       requestMessages: req.requestMessages,
-      status: 'failed',
+      status: 'pending',
       ts: req.ts,
     };
     this.mirror.push(entry);

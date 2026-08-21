@@ -43,7 +43,7 @@ export class LlmCallLogPersister {
       promptTokens: null,
       completionTokens: null,
       latencyMs: null,
-      status: 'failed',
+      status: 'pending',
       errorMsg: null,
       ts: req.ts,
     });

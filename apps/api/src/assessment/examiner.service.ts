@@ -459,7 +459,10 @@ export class ExaminerService {
     taskId: 'T1' | 'T2',
     ts: Date,
   ): Promise<ExaminerMessage[]> {
-    const task = getTask(taskId);
+    // 传 assessmentId：S1.3→T1 切换时，候选人看到的题面必须与本次测评
+    // 按 hashIndex 实际选中的 variant 一致；否则评估锚点（gaps/defects）
+    // 与下发题面错位，破坏 PoC 数据可信度。
+    const task = getTask(taskId, assessmentId);
     const modeSwitch = getCard('mode_switch');
     const cards = [
       {

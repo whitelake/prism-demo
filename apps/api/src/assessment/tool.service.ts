@@ -58,7 +58,7 @@ interface ProgressShape {
   totalElapsedSec?: number;
 }
 
-const IDLE_WARN_SEC = 300;
+const IDLE_WARN_SEC = 450;
 const IDLE_SKIP_SEC = 600;
 
 export interface CompleteTaskResult {
@@ -363,7 +363,7 @@ export class ToolService {
       // T1 → T2：写 task_done 卡 + T2 task_brief 卡
       const now = Date.now();
       const taskDoneCard = getCard('task_done');
-      const t2 = getTask('T2');
+      const t2 = getTask('T2', assessmentId);
       const ts = new Date(now);
       // 持久化 system_card 到 dialogue_log，否则 GET /state 重建时丢失卡片
       const taskDoneRow = await this.dialogueRepo.save({

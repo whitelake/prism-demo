@@ -13,6 +13,7 @@ import { LlmClient } from '@/llm/llm.client';
 import { AssessmentStatus } from '@/assessment/assessment.state';
 import { ExaminerService } from '@/assessment/examiner.service';
 import { ContextBuilder } from '@/assessment/context.builder';
+import { getTask } from '@/assessment/tasks.config';
 import type { ExaminerResponse } from '@/llm/schemas/examiner.schema';
 
 // 步骤 3 简化测试：覆盖 S1.1 → S1.2 → S1.3 → T1 的关键路径
@@ -222,7 +223,9 @@ describe('ExaminerService 阶段推进 (简化)', () => {
     expect(cards.length).toBe(2);
     expect(cards[0]!.card!.variant).toBe('mode_switch');
     expect(cards[1]!.card!.variant).toBe('task_brief');
-    expect(cards[1]!.card!.title).toBe('催收邮件');
+    // T1 题面按 hashIndex(assessmentId) 选 variant
+    // 断言卡片 title 与 getTask('T1', id).title 一致,验证 variant 选择 + 卡片渲染端到端
+    expect(cards[1]!.card!.title).toBe(getTask('T1', id).title);
 
     expect(JSON.stringify(result)).not.toContain('signals');
 
