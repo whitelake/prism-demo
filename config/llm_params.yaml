@@ -28,7 +28,7 @@ retry:
     temperature_step: -0.1   # 降温重试，给 LLM 机会退出 tool_calls 风格输出
   network_timeout:
     # 单次 LlmClient.call 最长 = timeout_ms × (SDK maxRetries+1=3) × max_attempts
-    # eval: 300s × 3 × 1 = 15 分钟；outline: 60s × 3 × 1 = 3 分钟
+    # eval: 300s × 3 × 1 = 15 分钟；outline: 100s × 3 × 1 = 5 分钟
     # SDK 内部 maxRetries=2 已给 3 次尝试机会，LlmClient 外层不再叠加重试，
     # 避免超长累计（原 max_attempts=3 让 eval 最长 45 分钟）
     max_attempts: 1
@@ -73,3 +73,5 @@ purposes:
     response_format: json_object
     max_tokens: 2048
     # outline 需要深思，保留 thinking 默认（不设 enable_thinking）
+    # 100s × 3 = 5 分钟（qwen3.8-max + thinking + 大 prompt 实测约 3 分钟）
+    timeout_ms: 100000

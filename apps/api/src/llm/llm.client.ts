@@ -21,6 +21,9 @@ export interface LlmCallParams<T> {
   systemPrompt: string;
   userMessages: OpenAI.ChatCompletionMessageParam[];
   schema?: ZodSchema<T>;
+  // 调用方 override purpose 默认 temperature（如防重复护栏重试时提一档）
+  // 不传则用 getPurposeParams(purpose).temperature
+  temperatureOverride?: number;
 }
 
 export interface LlmCallResult<T> {
@@ -109,7 +112,7 @@ export class LlmClient {
     const retry = getRetryConfig();
     let lastError: unknown = null;
     let lastRaw: string | undefined;
-    let temperature = purposeParams.temperature;
+    let temperature = params.temperatureOverride ?? purposeParams.temperature;
     let jsonAttempt = 0;
     let schemaAttempt = 0;
     let netAttempt = 0;

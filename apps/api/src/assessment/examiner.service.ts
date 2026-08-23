@@ -6,6 +6,7 @@ import { AssessmentEntity } from '@/db/entities/assessment.entity';
 import { DialogueLogEntity } from '@/db/entities/dialogue-log.entity';
 import { QuestionnaireResultEntity } from '@/db/entities/questionnaire-result.entity';
 import { LlmClient } from '@/llm/llm.client';
+import { getPurposeParams } from '@/llm/llm-params';
 import { ContextBuilder, type ChatMessage } from './context.builder';
 import { ExaminerResponseSchema, type ExaminerResponse } from '@/llm/schemas/examiner.schema';
 import {
@@ -549,14 +550,41 @@ export class ExaminerService {
     if (!systemMessage || systemMessage.role !== 'system') {
       throw new Error('[examiner] buildExaminerContext must return system message first');
     }
-    const result = await this.llmClient.call({
-      assessmentId,
-      purpose: 'examiner',
-      systemPrompt: systemMessage.content,
-      userMessages: rest as OpenAI.ChatCompletionMessageParam[],
-      schema: ExaminerResponseSchema,
-    });
-    return result.parsed as ExaminerResponse;
+
+    const priorQuestions = messages
+      .filter((m) => m.role === 'assistant')
+      .map((m) => m.content);
+
+    const callOnce = (temperatureOverride?: number) =>
+      this.llmClient.call({
+        assessmentId,
+        purpose: 'examiner',
+        systemPrompt: systemMessage.content,
+        userMessages: rest as OpenAI.ChatCompletionMessageParam[],
+        schema: ExaminerResponseSchema,
+        ...(temperatureOverride != null ? { temperatureOverride } : {}),
+      });
+
+    const result = await callOnce();
+    let parsed = result.parsed as ExaminerResponse;
+
+    // 防重复护栏：与历史 AI 问题字面重复或高度相似时重调一次（temperature 提一档）
+    // 历史为空（阶段首问）时跳过；最多重试 1 次
+    if (priorQuestions.length > 0 && isDuplicateQuestion(parsed.question, priorQuestions)) {
+      const bumped = Math.min(1, (getPurposeParams('examiner').temperature ?? 0.6) + 0.2);
+      this.logger.warn(
+        `[examiner] duplicate question detected for ${assessmentId}, retrying at temperature=${bumped} (prior: ${priorQuestions[priorQuestions.length - 1]})`,
+      );
+      const retry = await callOnce(bumped);
+      const retryParsed = retry.parsed as ExaminerResponse;
+      // 重试结果仍重复则保留重试结果（已尽力，落库让下游看到），但不覆盖原 signals
+      parsed = {
+        question: retryParsed.question,
+        signals: parsed.signals,
+      };
+    }
+
+    return parsed;
   }
 
   private async loadExaminerSignalHistory(
@@ -594,3 +622,27 @@ export class ExaminerService {
 
 // re-export for callers wanting the chat message type
 export type { ChatMessage };
+
+// 防重复判定：归一化后字面相等、或一方包含另一方且长度差≤5，视为重复
+// 归一化去掉标点、空格、常见语气词，转小写——只比较问句骨架
+function normalizeQuestion(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[，。？！、,.?!：;；\s]/g, '')
+    .replace(/(那|嗯|好的|然后|接着|后来|当时|具体|你呢)/g, '');
+}
+
+function isDuplicateQuestion(question: string, priorQuestions: string[]): boolean {
+  const norm = normalizeQuestion(question);
+  if (!norm) return false;
+  for (const prior of priorQuestions) {
+    const p = normalizeQuestion(prior);
+    if (!p) continue;
+    if (norm === p) return true;
+    // 一方包含另一方且长度差≤5，覆盖"只换主语/宾语"的重复
+    if (Math.abs(norm.length - p.length) <= 5 && (norm.includes(p) || p.includes(norm))) {
+      return true;
+    }
+  }
+  return false;
+}
