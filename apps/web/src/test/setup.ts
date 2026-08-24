@@ -1,5 +1,11 @@
 import { vi } from 'vitest';
 
+// @ant-design/plots 用 Canvas 渲染，jsdom 无真实 canvas 上下文会崩溃
+// 全局 mock 成占位 div；测试断言走文本内容，不依赖图表渲染
+vi.mock('@ant-design/plots', () => ({
+  Radar: () => null,
+}));
+
 // jsdom 缺失 polyfill
 Object.defineProperty(globalThis, 'matchMedia', {
   value: (query: string) => ({
