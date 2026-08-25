@@ -26,6 +26,11 @@ RUN pnpm install --frozen-lockfile --prod --ignore-scripts
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 COPY config ./config
+# pnpm@11.1.2 在 --prod 模式下不会为 workspace link: 依赖建立符号链接（已验证：
+# 去掉 --prod 才会生成 apps/api/node_modules/@prism/shared -> ../../../../packages/shared，
+# 带 --prod 无论是否 --frozen-lockfile 都不生成），手动补上避免运行时 MODULE_NOT_FOUND
+RUN mkdir -p apps/api/node_modules/@prism \
+    && ln -s ../../../../packages/shared apps/api/node_modules/@prism/shared
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD wget -q -O- http://localhost:3000/api/v1/health || exit 1
