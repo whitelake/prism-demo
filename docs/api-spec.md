@@ -1,7 +1,14 @@
 
-**版本**：v0.1
-**配套文档**：PRD v0.1、技术架构方案 v0.1
+**版本**：v0.2
+**配套文档**：PRD v0.2、技术架构方案 v0.2
 **用途**：前后端并行开发的契约文档
+
+## 变更记录
+
+| 版本 | 日期 | 变更点 |
+|---|---|---|
+| v0.1 | 2026-08-14 | 初版 |
+| v0.2 | 2026-08-25 | ① 3.4/3.7 任务时长示例改为 1200 秒（20 分钟）；② 3.7 T1/T2 示例改为 variants 选取后的形态；③ 7.2 解锁态渲染契约加维度雷达图 |
 
 ---
 
@@ -151,14 +158,14 @@ interface SystemCard {
   variant: 'mode_switch' | 'task_brief' | 'task_done' | 'notice';
   title: string;
   body: string;                  // 支持简单 Markdown（换行、加粗、列表）
-  attachment?: {                 // T2 的核查材料
+  attachment?: {                 // T2 的事实性陈述材料（可选）
     label: string;
     content: string;             // 纯文本材料全文
   };
 }
 // variant 用途：
 //   mode_switch  - 考官→工具模式切换提示
-//   task_brief   - 工具任务说明（含 T2 核查材料 attachment）
+//   task_brief   - 工具任务说明（T2 variant 可能带 attachment）
 //   task_done    - 任务完成提示
 //   notice       - 系统/异常提示（如 LLM 重试后的恢复说明、网络中断提示）
 ```
@@ -448,14 +455,14 @@ POST /api/v1/c/{token}/message
       "card": {
         "variant": "task_brief",
         "title": "任务一",
-        "body": "你需要给一家合作供应商写一封催货邮件。\n对方交付已延期，你希望对方尽快给出明确的交付时间，同时不希望破坏后续的合作关系。\n\n请在下方输入框中，自己组织语言让AI帮你完成。"
+        "body": "下班前回复王总这件事。\n\n【微信 · 华东经销商群】\n王总 09:12  上次说的那批货什么时候能到?\n王总 11:40  我这边客户一直在问,你给个准话\n王总 14:03  再拖下去我这边不好交代了\n\n【内部邮件 · 生产部 → 销售部(抄送你)】\n主题:物料到货情况\n上游那批物料预计下周中到,具体日期还没定,到了之后排产大概 2 天。\n\n【排产表截图文字】\n华东-王总订单｜计划出库 3/18｜备注:待物料\n华东-王总订单｜计划出库 3/22｜备注:调整后\n\n【公司通知】\n本周五下午行政楼停电,请提前保存文件。\n\n请在下方输入框中,自己组织语言让AI帮你完成。"
       },
       "ts": "..."
     }
   ],
   "timer": {
     "examinerTotalRemainingSec": null,
-    "taskRemainingSec": 720,
+    "taskRemainingSec": 1200,
     "...": "..."
   }
 }
@@ -481,7 +488,7 @@ Accept: text/event-stream
 **请求**（同 3.5）
 
 ```json
-{ "content": "帮我写一封催货邮件，供应商延期了两周..." }
+{ "content": "帮我回复王总，既要让他别再催了又要保住合作..." }
 ```
 
 **响应 200**，`Content-Type: text/event-stream`
@@ -564,15 +571,11 @@ POST /api/v1/c/{token}/task/complete
       "card": {
         "variant": "task_brief",
         "title": "任务二",
-        "body": "下面这段材料是从一份行业报告里摘出来的...\n请让AI帮你判断这段材料是否可以直接用在你的方案中。",
-        "attachment": {
-          "label": "待核查材料",
-          "content": "2024年国内某细分市场规模达到 480 亿元，同比增长 62%..."
-        }
+        "body": "把下面的材料整理成一页简报,发给部门负责人。\n\n【一季度区域销量】\n华东 120 万｜华南 95 万｜华北 80 万｜合计 320 万\n\n【同比】\n去年同期合计 275 万,本季同比增长 15%。\n\n【市场情况】\n我司市占率 12%,位居行业前列。\n据行业内部消息,明年整体市场规模将增长 20%。\n\n【备注】\n市占率数据来源:2021 年行业年鉴。"
       }
     }
   ],
-  "timer": { "taskRemainingSec": 480, "...": "..." }
+  "timer": { "taskRemainingSec": 1200, "...": "..." }
 }
 ```
 
@@ -899,10 +902,10 @@ GET /api/v1/assessments/{id}/report
     "toolTasks": [
       {
         "task": "T1",
-        "taskTitle": "任务一：催货邮件",
+        "taskTitle": "任务一：交付延迟回复",
         "turns": [
-          { "turnIndex": 1, "role": "candidate", "content": "帮我写一封催货邮件...", "ts": "...", "responseIntervalSec": 52 },
-          { "turnIndex": 1, "role": "ai", "content": "尊敬的张经理：...", "ts": "..." }
+          { "turnIndex": 1, "role": "candidate", "content": "帮我回复王总...", "ts": "...", "responseIntervalSec": 52 },
+          { "turnIndex": 1, "role": "ai", "content": "王总，关于您这批货...", "ts": "..." }
         ]
       }
     ]
@@ -1349,9 +1352,11 @@ X-Admin-Key: {key}
 | 条件 | 渲染 |
 |------|------|
 | `locked === true` | 追问题纲 + 原始日志 + 面试记录录入框 + 判断B表单。**页面不含任何AI结论区块** |
-| `locked === false && evaluationC` | 三方对比区（A/B/C）+ A详情 + C详情 + 原始日志 |
-| `locked === false && !judgmentB` | A详情 + 原始日志 |
+| `locked === false && evaluationC` | 三方对比区（A/B/C）+ 维度雷达图 + A详情 + C详情 + 原始日志 |
+| `locked === false && !judgmentB` | 维度雷达图 + A详情 + 原始日志 |
 | `status === 'eval_failed'` | 失败提示 + 重新评估按钮 + 原始日志 |
+
+**维度雷达图**：4 个维度（D1–D4）的等级以雷达图呈现，**L0–L4 五档固定刻度**（不随候选人表现缩放），候选人各维度等级连成多边形并填充半透明面积——面积大小直观反映综合实力。雷达图下方列出每个维度代码 + 名称 + 等级。这是 P6 报告页的可视化区块，业务数据由 `/report` 接口返回的 `evaluationA.dimensions` / `evaluationC.dimensions` 提供，前端不参与等级计算。
 
 **⚠ 前端实现禁令**：不得在锁定态尝试从任何接口拼凑 A 的结论；不得缓存解锁前后的响应做对比。锁定由服务端保证，前端不需要也不应该做任何"隐藏"逻辑。
 

@@ -1,6 +1,13 @@
-**版本**：v0.1
-**配套文档**：《招聘AI素质测评系统 PRD（PoC版）v0.1》
+**版本**：v0.2
+**配套文档**：《招聘AI素质测评系统 PRD（PoC版）v0.2》
 **定位**：进入正式开发前的技术约束文档
+
+## 变更记录
+
+| 版本 | 日期 | 变更点 |
+|---|---|---|
+| v0.1 | 2026-08-14 | 初版 |
+| v0.2 | 2026-08-25 | ① 2.1 模型按 purpose 分流；② 3.2 tasks.yaml schema 加 variants/gaps/defects 字段；③ 3.3 前端结构补 EvaluationView；④ 4.4 重试参数表更新为代码实际值；⑤ 4.5 区分"对外接口形态"vs"底层 LLM 调用 stream" |
 
 ---
 
@@ -41,7 +48,7 @@
 | 数据库 | 阿里云 RDS MySQL 8.0（基础版，2C4G） | 需要存大文本 + 结构化查询。基础版单节点足够PoC |
 | 部署 | 阿里云 ECS（2C4G，Ubuntu 22.04）+ Docker Compose | 最轻量。不用容器服务，不用K8s |
 | 静态资源 | Nginx 直接托管前端产物（与后端同机） | 不用OSS+CDN，5并发无必要 |
-| 模型 | 阿里云百炼 **底层模型API**（OpenAI 兼容模式） | 已完成Spike选型 |
+| 模型 | 阿里云百炼 **底层模型API**（OpenAI 兼容模式）。按 purpose 分流：对话/工具用速度优先模型（`LLM_MODEL_DIALOG`，关闭思维链），评估/题纲用能力优先模型（`LLM_MODEL_EVAL`，默认开启思维链）；兜底 `LLM_MODEL`；api_base 用 `DASHSCOPE_BASE_URL` | 已完成Spike选型 |
 | 域名/证书 | 阿里云域名 + 免费SSL证书 | 候选人链接需要HTTPS |
 | 日志 | 文件日志（pino）+ 关键数据落库 | 不接SLS |
 | 监控 | 无 | PRD第7章明确不做 |
@@ -149,7 +156,7 @@ src/
 ├── config/
 │   ├── prompts/           4份Prompt（.md）
 │   ├── stages.yaml        阶段目标、轮次上限配置
-│   ├── tasks.yaml         工具任务描述、时长、requireMinTurns
+│   ├── tasks.yaml         工具任务描述、时长、require_min_turns、variants（含 gaps/defects 内部字段）
 │   ├── questionnaire.yaml 5道选择题题目与选项
 │   ├── levels.yaml        等级定义与必要证据（注入评估Prompt）
 │   ├── outline_blacklist.yaml  题纲黑名单正则（见4.4）
@@ -158,6 +165,39 @@ src/
     ├── guards/
     └── filters/
 ```
+
+### tasks.yaml schema 示例
+
+```yaml
+tasks:
+  - id: T1
+    duration_minutes: 20
+    require_min_turns: 0
+    variants:
+      - id: T1-A
+        title: 交付延迟回复
+        description: |
+          <题面全文，含多渠道来源信息>
+        gaps:                    # 仅 A 评估使用，严禁下发前端
+          - <需要候选人自行判断的信息缺口>
+  - id: T2
+    duration_minutes: 20
+    require_min_turns: 0
+    variants:
+      - id: T2-A
+        title: 销量简报
+        description: |
+          <题面全文，含事实性陈述材料>
+        defects:                 # 仅 A 评估使用，严禁下发前端
+          - level: 低
+            desc: <事实性问题>
+```
+
+字段含义：
+- `variants`：每个任务的平行题面，按 `assessmentId` 确定性选取其中一个
+- `gaps`（T1）/ `defects`（T2）：仅供 A 评估对照使用的内部字段，**前端接口不得返回**，避免泄露考察意图
+- `duration_minutes`：任务时长（分钟），前端倒计时按此计算
+- `require_min_turns`：0 表示不强制交互；候选人可直接点"完成这个任务"
 
 ### stages.yaml schema 示例
 
@@ -203,9 +243,10 @@ src/
 ├── components/
 │   ├── ChatMessage.tsx
 │   ├── SystemCard.tsx     ★ 模式切换卡片
-│   └── StageTimer.tsx
+│   ├── StageTimer.tsx
+│   └── EvaluationView.tsx  ★ 报告页评估视图（含 D1-D4 维度雷达图，L0-L4 五档固定刻度）
 └── hooks/
-    └── useToolStream.ts   工具模式 SSE 流式接收（仅工具模式；考官模式不做流式，见4.5）
+    └── useToolStream.ts   工具模式 SSE 流式接收（仅工具模式；考官模式对外不做流式，见4.5）
 ```
 
 **候选人端与面试官端在同一个前端应用**，用路由区分。理由：PoC规模小，拆两个应用增加部署复杂度，收益为零。
@@ -626,13 +667,13 @@ function parseJsonResponse<T>(raw: string, schema: ZodSchema<T>): T {
 }
 ```
 
-**重试策略**：
+**重试策略**（与 `config/llm_params.yaml` 一致）：
 
 | 场景 | 策略 |
 |------|------|
-| JSON 解析失败 | 重试1次（temperature 降0.1），仍失败则报错 |
-| Schema 校验失败（如 dimensions 不足4项） | 重试1次，仍失败则落库原始返回 + 标记 `eval_failed` |
-| 网络/超时 | 指数退避重试3次（1s/2s/4s） |
+| JSON 解析失败 | 重试 2 次（每次 temperature 降 0.1），仍失败则报错 |
+| Schema 校验失败（如 dimensions 不足4项） | 重试 3 次（每次 temperature 降 0.1，给 LLM 机会退出 tool_calls 风格输出），仍失败则落库原始返回 + 标记 `eval_failed` |
+| 网络/超时 | SDK 内部 maxRetries=2 已给 3 次尝试机会，LlmClient 外层不再叠加（max_attempts=1），避免 eval 最长累计 45 分钟 |
 
 **评估失败不能静默**：必须落库原始返回，面试官侧显示"评估失败"并提供"重新评估"按钮（PRD 4.7）。
 
@@ -704,12 +745,19 @@ data: {"aiMessageId":32,"turnIndex":1,"taskRemainingSec":540,"finishReason":"sto
 | # | 要点 |
 |---|------|
 | 1 | 工具模式无 signals 字段（PRD 5.4），SSE 流不涉及 signals 落库；考官模式 signals 仅落库、不进入任何前端响应（PoC 约束3） |
-| 2 | 考官模式**不做流式**：考官返回 JSON，普通 POST + loading 动效即可；前端不解析流式 JSON |
+| 2 | 考官模式**对外接口不做流式**：考官返回 JSON，普通 POST + loading 动效即可；前端不解析流式 JSON |
 | 3 | 工具模式直接返回文本，真流式 |
 | 4 | `done` 事件**不携带阶段推进信号**；任务时长归零由前端在收到 `done` 后调用 `POST /api/v1/c/:token/skip`（`reason: task_timeout`）触发推进 |
 | 5 | 前端需处理连接中断，展示"重试"按钮（PRD 6.4） |
 
-**考官模式不做流式的理由**：考官模式回复很短（40 字以内），等待 2–3 秒可接受，流式解析 JSON 会显著增加复杂度。工具模式回复长，必须流式。这个取舍能省下一天开发时间。
+**对外接口形态 vs 底层 LLM 调用 stream**：
+
+- 考官模式**对外接口**是普通 POST（前端一次性拿到 JSON）——这一层不变
+- 但考官模式**底层 LLM 调用** `stream: true`（`config/llm_params.yaml` 中 `examiner.stream: true`），目的是降低单次延迟（从思维链模式 30–70 秒降到 2–5 秒）；后端在收到完整流式响应后聚合成 JSON 再返回前端
+- 即"对外非流式、底层流式"——前端无感知，后端用流式降低 TTFB 与单次延迟
+- 工具模式则对外和底层都是真流式（SSE 直透）
+
+**考官模式对外不做流式的理由**：考官模式回复很短（40 字以内），等待 2–3 秒可接受，前端流式解析 JSON 会显著增加复杂度。工具模式回复长，必须流式。这个取舍能省下一天开发时间。
 
 ---
 
