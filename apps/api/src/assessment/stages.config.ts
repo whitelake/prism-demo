@@ -42,6 +42,12 @@ export function loadStages(): Map<string, StageConfig> {
   return map;
 }
 
+// 热更新：清空模块级缓存，下次 loadStages 重新读盘
+// 供 POST /api/v1/admin/reload-config 调用（api-spec 5.1）
+export function clearStagesCache(): void {
+  cached = null;
+}
+
 export function getStageConfig(code: 'S1.1' | 'S1.2' | 'S1.3'): StageConfig {
   const stages = loadStages();
   const cfg = stages.get(code);

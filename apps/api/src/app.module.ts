@@ -4,6 +4,7 @@ import { LlmModule } from './llm/llm.module';
 import { AssessmentModule } from './assessment/assessment.module';
 import { AuthModule } from './auth/auth.module';
 import { QuestionnaireModule } from './questionnaire/questionnaire.module';
+import { AdminModule } from './admin/admin.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -13,6 +14,7 @@ import { AppController } from './app.controller';
     QuestionnaireModule,
     AuthModule,
     AssessmentModule,
+    AdminModule,
   ],
   controllers: [AppController],
   providers: [],

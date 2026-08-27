@@ -39,6 +39,12 @@ export function loadLevels(): LevelEntry[] {
   return cached;
 }
 
+// 热更新：清空模块级缓存，下次 loadLevels 重新读盘
+// 供 POST /api/v1/admin/reload-config 调用（api-spec 5.1）
+export function clearLevelsCache(): void {
+  cached = null;
+}
+
 // 渲染为 evaluation prompt 使用的多行字符串
 // 格式与 evaluation.spec.ts 测试中保持一致：`Lx: name - definition`
 export function renderLevelDefinitions(): string {

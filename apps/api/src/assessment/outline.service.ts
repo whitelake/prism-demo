@@ -49,7 +49,7 @@ interface BlacklistFile {
 @Injectable()
 export class OutlineService {
   private readonly logger = new Logger(OutlineService.name);
-  private readonly blacklist: RegExp[];
+  private blacklist: RegExp[];
 
   constructor(
     @InjectRepository(AssessmentEntity)
@@ -62,6 +62,12 @@ export class OutlineService {
     private readonly outlineRepo: Repository<OutlineEntity>,
     private readonly llmClient: LlmClient,
   ) {
+    this.blacklist = loadBlacklist();
+  }
+
+  // 热更新：重新读 config/outline_blacklist.yaml 替换实例级缓存
+  // 供 POST /api/v1/admin/reload-config 通过 DI 调用（api-spec 5.1）
+  reloadBlacklist(): void {
     this.blacklist = loadBlacklist();
   }
 

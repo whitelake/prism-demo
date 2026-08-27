@@ -27,6 +27,7 @@ export type ErrorCode =
   | 'ABANDON_NOT_ALLOWED'
   // 管理
   | 'CONFIG_INVALID'
+  | 'ADMIN_KEY_INVALID'
   | 'NOT_IMPLEMENTED';
 
 export interface ErrorDef {
@@ -60,6 +61,7 @@ const ERROR_DEFS: Record<ErrorCode, Omit<ErrorDef, 'code'>> = {
   ABANDON_NOT_ALLOWED: { httpStatus: 409, message: '当前状态不可标记放弃' },
 
   CONFIG_INVALID: { httpStatus: 400, message: '配置文件语法错误' },
+  ADMIN_KEY_INVALID: { httpStatus: 401, message: '管理密钥无效或缺失' },
   NOT_IMPLEMENTED: { httpStatus: 501, message: '该接口尚未实现（PoC 骨架）' },
 };
 

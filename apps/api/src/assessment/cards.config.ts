@@ -39,6 +39,12 @@ export function loadCards(): Record<string, CardContent> {
   return cached;
 }
 
+// 热更新：清空模块级缓存，下次 loadCards 重新读盘
+// 供 POST /api/v1/admin/reload-config 调用（api-spec 5.1）
+export function clearCardsCache(): void {
+  cached = null;
+}
+
 export function getCard(variant: string): CardContent {
   const cards = loadCards();
   const c = cards[variant];

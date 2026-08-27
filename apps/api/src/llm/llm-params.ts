@@ -64,6 +64,12 @@ export function loadLlmParams(): LlmParamsFile {
   return cached;
 }
 
+// 热更新：清空模块级缓存，下次 loadLlmParams 重新读盘
+// 供 POST /api/v1/admin/reload-config 调用（api-spec 5.1）
+export function clearLlmParamsCache(): void {
+  cached = null;
+}
+
 export function getPurposeParams(purpose: LlmPurpose): PurposeParams {
   return loadLlmParams().purposes[purpose];
 }

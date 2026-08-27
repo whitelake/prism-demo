@@ -63,6 +63,12 @@ function loadRaw(): RawTask[] {
   return cached;
 }
 
+// 热更新：清空模块级缓存，下次 loadRaw 重新读盘
+// 供 POST /api/v1/admin/reload-config 调用（api-spec 5.1）
+export function clearTasksCache(): void {
+  cached = null;
+}
+
 /** 兼容旧调用:返回各任务的首个题面 */
 export function loadTasks(): TaskConfig[] {
   return loadRaw().map((t) => mergeVariant(t, pickVariant(t)));

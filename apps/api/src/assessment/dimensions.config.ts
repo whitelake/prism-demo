@@ -4,7 +4,7 @@ import * as yaml from 'js-yaml';
 
 // 与 config/dimensions.yaml v0.1 对齐。
 // 注入到 config/prompts/evaluation.md 的 {{dimension_definitions}} 占位符。
-// 修改后需重启进程生效（PoC 未实现 reload-config 热更新）。
+// 热更新：调 clearDimensionsCache() 后下次 loadDimensions 重新读盘（api-spec 5.1）。
 
 interface DimensionEntry {
   code: string;
@@ -43,6 +43,12 @@ export function loadDimensions(): DimensionEntry[] {
   const parsed = yaml.load(raw) as DimensionsFile;
   cached = parsed.dimensions;
   return cached;
+}
+
+// 热更新：清空模块级缓存，下次 loadDimensions 重新读盘
+// 供 POST /api/v1/admin/reload-config 调用（api-spec 5.1）
+export function clearDimensionsCache(): void {
+  cached = null;
 }
 
 // 渲染为 evaluation prompt 使用的多行字符串
