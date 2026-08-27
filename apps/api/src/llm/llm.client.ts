@@ -116,10 +116,11 @@ export class LlmClient {
     let jsonAttempt = 0;
     let schemaAttempt = 0;
     let netAttempt = 0;
-    // 单次 call 的绝对上限：取两类重试预算的较大者，防止异常情况下死循环
+    // 单次 call 的绝对上限：取三类重试预算的较大者，防止异常情况下死循环
     const hardCap = Math.max(
       retry.json_parse_fail.max_attempts,
       retry.network_timeout.max_attempts,
+      retry.schema_validation_fail.max_attempts,
     );
 
     // 骨架阶段：流式聚合暂未实现，强制 stream=false 联调

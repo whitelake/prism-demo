@@ -1,4 +1,4 @@
-# prism-demo 本机部署编排（PoC）
+# prism-demo 部署编排（PoC）
 # 三容器：mysql + api + web
 # web 容器同时承担静态 serve 与边缘 nginx 反代（含 SSE buffering off）
 
@@ -12,8 +12,6 @@ services:
       MYSQL_DATABASE: ${DB_NAME:-prism_demo}
       MYSQL_USER: ${DB_USER:-prism}
       MYSQL_PASSWORD: ${DB_PASSWORD:-prism_pass}
-    ports:
-      - "${DB_PORT:-3306}:3306"
     volumes:
       - mysql-data:/var/lib/mysql
     command:

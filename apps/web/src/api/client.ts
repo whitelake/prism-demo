@@ -68,11 +68,22 @@ interface JwtPayload {
   exp: number;
 }
 
+// atob() 按字节还原 base64，不做 UTF-8 解码；JWT payload 里的中文名字若直接
+// JSON.parse(atob(...)) 会被按 Latin-1 逐字节误读，需要显式走 UTF-8 解码
+// （后端 jwt.service.ts 的 b64urlDecode 是对的，这里只是补齐前端这一侧）
+function decodeJwtPayload(token: string): JwtPayload {
+  const b64url = token.split('.')[1]!;
+  const b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+  const bytes = Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder('utf-8').decode(bytes)) as JwtPayload;
+}
+
 export function getInterviewer(): Interviewer | null {
   const token = getJwt();
   if (!token) return null;
   try {
-    const payload = JSON.parse(atob(token.split('.')[1]!)) as JwtPayload;
+    const payload = decodeJwtPayload(token);
     return { id: payload.sub, name: payload.name };
   } catch {
     return null;
@@ -83,7 +94,7 @@ export function isJwtExpired(): boolean {
   const token = getJwt();
   if (!token) return true;
   try {
-    const payload = JSON.parse(atob(token.split('.')[1]!)) as JwtPayload;
+    const payload = decodeJwtPayload(token);
     return Date.now() >= payload.exp * 1000;
   } catch {
     return true;
